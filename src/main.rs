@@ -88,6 +88,14 @@ async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse
         .unwrap()
 }
 
+fn parse_content_range(content_range: &str) -> Option<u64> {
+    if let Some(stripped) = content_range.strip_prefix("bytes-") {
+        stripped.split('-').next().and_then(|s| s.parse().ok())
+    } else {
+        None
+    }
+}
+
 // Serve video with timestamp-based range support
 async fn serve_video_with_timestamp(
     Path(filename): Path<String>,
@@ -99,9 +107,12 @@ async fn serve_video_with_timestamp(
 
     let video_bitrate = 2000000.0;
     let audio_bitrate = 128000.0;
+    //let audio_bitrate = 0.0;
 
     // Get timestamp from the query parameters or default to 0
     let start_timestamp = params.timestamp.unwrap_or(0.0);
+
+    println!("Start timestamp: {}", start_timestamp);
 
     // Create buffer for transcoded data
     let buffer = Arc::new(Mutex::new(Vec::new()));
@@ -116,56 +127,44 @@ async fn serve_video_with_timestamp(
     let (tx, _rx): (Sender<()>, Receiver<()>) = watch::channel(());
     let handle = tokio::spawn(async move {
         let mut ffmpeg = Command::new("ffmpeg")
-            .args([
-                "-v",
-                "quiet",
-                "-hwaccel",
-                "cuda",
-                "-hwaccel_output_format",
-                "cuda",
-                "-ss",
-                &start_timestamp.to_string(),
-                "-i",
-                &input_path,
-                "-t",
-                "120.0",
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                "fast",
-                "-b:v",
-                "2M",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-movflags",
-                "frag_keyframe+empty_moov",
-                "-f",
-                "mp4",
-                "pipe:1",
-            ])
+            .args(["-v", "quiet"])
+            .args(["-hwaccel", "cuda"])
+            .args(["-hwaccel_output_format", "cuda"])
+            .args(["-ss", &start_timestamp.to_string()])
+            .args(["-i", &input_path])
+            .args(["-t", "10.0"])
+            .args(["-c:v", "h264_nvenc"])
+            .args(["-preset", "fast"])
+            .args(["-b:v", "2M"])
+            .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
+            .args(["-c:a", "libopus"])
+            .args(["-b:a", "128k"])
+            .args(["-movflags", "frag_keyframe+empty_moov"])
+            .args(["-f", "mp4"])
+            .args(["pipe:1"])
             .stdout(Stdio::piped())
             .spawn()
             .expect("Failed to start FFmpeg");
 
         if let Some(mut stdout) = ffmpeg.stdout.take() {
-            let mut read_buf = Vec::new();
+            let mut read_buf = vec![0; 1024 * 1024 * 12];
             // if let Ok(bytes_read) = stdout.read_exact(&mut read_buf).await {
             //     let mut buffer_writer = buffer_clone.lock().unwrap();
             //     buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
             // } else {
             //     eprintln!("Failed to read FFmpeg stdout");
             // }
-            match stdout.read(&mut read_buf).await {
-                Ok(bytes_read) => {
-                    let mut buffer_writer = buffer_clone.lock().unwrap();
-                    buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
-                    println!("Read {} bytes", bytes_read);
-                    println!("Buffer: {:?}", read_buf);
-                }
-                Err(e) => {
-                    eprintln!("Failed to read FFmpeg stdout: {}", e);
+            loop {
+                match stdout.read(&mut read_buf).await {
+                    Ok(0) => break,
+                    Ok(bytes_read) => {
+                        let mut buffer_writer = buffer_clone.lock().unwrap();
+                        buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
+                        println!("Read {} bytes", bytes_read);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to read FFmpeg stdout: {}", e);
+                    }
                 }
             }
         }
@@ -183,17 +182,44 @@ async fn serve_video_with_timestamp(
     println!("Transcoded size: {}", transcoded_size);
     let body = Body::from(buffer_reader.clone()); // Clone to allow simultaneous use
 
-    Response::builder()
-        .status(206)
-        .header(header::CONTENT_TYPE, "video/mp4")
-        .header(header::ACCEPT_RANGES, "bytes")
-        .header(
+    let mut res = Response::builder().status(206).body(body).unwrap();
+
+    let content_range_header = _headers.get(header::RANGE);
+    let requested_content_range = if let Some(content_range_header) = content_range_header {
+        parse_content_range(content_range_header.to_str().unwrap())
+    } else {
+        None
+    };
+
+    let response_headers = res.headers_mut();
+    response_headers.insert(header::CONTENT_TYPE, "video/mp4".parse().unwrap());
+    response_headers.insert(
+        header::CONTENT_LENGTH,
+        transcoded_size.to_string().parse().unwrap(),
+    );
+
+    if let Some(requested_content_range) = requested_content_range {
+        println!("Requested content range: {}", requested_content_range);
+        response_headers.insert(
             header::CONTENT_RANGE,
-            format!("bytes 0-{}/{}", transcoded_size, estimated_size),
-        )
-        .header(header::CONTENT_LENGTH, transcoded_size.to_string())
-        .body(body)
-        .unwrap()
+            format!(
+                "bytes {}-{}/{}",
+                requested_content_range,
+                requested_content_range + transcoded_size as u64,
+                estimated_size as u64
+            )
+            .parse()
+            .unwrap(),
+        );
+    } else {
+        response_headers.insert(
+            header::CONTENT_RANGE,
+            format!("bytes 0-{}/{}", transcoded_size, estimated_size as u64)
+                .parse()
+                .unwrap(),
+        );
+    }
+    res
 }
 
 #[tokio::main]
