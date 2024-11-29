@@ -21,9 +21,9 @@
 			videoElement.src = URL.createObjectURL(mediaSource);
 
 			mediaSource.addEventListener('sourceopen', async () => {
-				// const video_duration = await fetch(`${durationUrl}`);
-				// let duration = parseFloat(await video_duration.text());
-				// mediaSource.duration = duration;
+				const video_duration = await fetch(`${durationUrl}`);
+				let duration = parseFloat(await video_duration.text());
+				mediaSource.duration = duration;
 				let sourceBuffer;
 				try {
 					sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
