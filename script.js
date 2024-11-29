@@ -4,11 +4,21 @@ const durationUrl = 'http://localhost:3000/video-duration/sample.mp4';
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;
-let isFetching = false; // Prevent simultaneous fetches
+let isFetching = false;
+let videoDuration = 0;
+let isSeeking = false;
 
 if ('MediaSource' in window) {
 	mediaSource = new MediaSource();
 	videoElement.src = URL.createObjectURL(mediaSource);
+
+	videoElement.addEventListener('seeking', () => {
+		isSeeking = true;
+	});
+
+	videoElement.addEventListener('seeked', () => {
+		isSeeking = false;
+	});
 
 	const fetchVideoChunk = async (startTime) => {
 		if (isFetching || !sourceBuffer || sourceBuffer.updating) return;
@@ -30,17 +40,27 @@ if ('MediaSource' in window) {
 
 	const reloadVideoChunk = async (currentTime) => {
 		try {
-			// Clear existing buffer
 			sourceBuffer.abort();
-			//let newTime = Math.ceil(currentTime);
 			//return the closest 10 seconds
 			let newTime = Math.ceil(currentTime / 10) * 10;
-			//await videoElement.pause();
+			sourceBuffer.timestampOffset = newTime;
 			await fetchVideoChunk(newTime);
-			//await videoElement.play();
+			return newTime;
 		} catch (error) {
 			console.error("Error during reload:", error.message);
 		}
+	}
+
+	const getRelevantBufferEnd = () => {
+		let bufferEnd = 0;
+		for (let i = 0; i < sourceBuffer.buffered.length; i++) {
+			const start = sourceBuffer.buffered.start(i);
+			const end = sourceBuffer.buffered.end(i);
+			if (start <= videoElement.currentTime && end > bufferEnd) {
+				bufferEnd = end;
+			}
+		}
+		return bufferEnd;
 	}
 
 	mediaSource.addEventListener('sourceopen', async () => {
@@ -48,12 +68,12 @@ if ('MediaSource' in window) {
 			// Set video duration
 			const response = await fetch(durationUrl);
 			if (!response.ok) throw new Error("Failed to fetch video duration");
-			const duration = parseFloat(await response.text());
-			mediaSource.duration = duration;
+			videoDuration = parseFloat(await response.text());
+			mediaSource.duration = videoDuration;
 
 			// Initialize SourceBuffer
 			sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
-			sourceBuffer.mode = 'sequence';
+			//sourceBuffer.mode = 'sequence';
 
 			sourceBuffer.addEventListener('error', (e) => {
 				console.error("SourceBuffer error:", e);
@@ -70,42 +90,22 @@ if ('MediaSource' in window) {
 		if (!sourceBuffer || sourceBuffer.updating || isFetching) return;
 
 		const currentTime = videoElement.currentTime;
-		const bufferEnd = sourceBuffer.buffered.length > 0
-			? sourceBuffer.buffered.end(0)
-			: 0;
+		// const bufferEnd = sourceBuffer.buffered.length > 0
+		// 	? sourceBuffer.buffered.end(0)
+		// 	: 0;
+		const bufferEnd = getRelevantBufferEnd();
+		if (currentTime >= bufferEnd - 2) {
+			let newTime = await reloadVideoChunk(currentTime);
+			if (isSeeking) {
+				console.log(`Seeking to time: ${newTime}`);
+				isSeeking = false;
+				videoElement.currentTime = newTime;
+			}
 
-		if (currentTime >= bufferEnd - 6) {
-			await reloadVideoChunk(currentTime);
 			await videoElement.play();
 		}
 	});
 
-	const seeking = async () => {
-		const newTime = videoElement.currentTime;
-		console.log(`Seeking to time: ${newTime}`);
-		// if (!sourceBuffer || sourceBuffer.updating || isFetching) {
-		// 	let cause = isFetching ? "fetching" : "updating";
-		// 	console.log(`Cannot seek while ${cause}`);
-		// 	return;
-		// }
-
-
-		//try {
-		// Clear existing buffer
-		console.log("Current timestamp offset:", sourceBuffer.timestampOffset);
-		sourceBuffer.abort();
-		//sourceBuffer.remove(0, sourceBuffer.buffered.end(0));
-		await videoElement.pause();
-		await fetchVideoChunk(newTime);
-		sourceBuffer.timestampOffset = newTime;
-		videoElement.currentTime = newTime;
-		console.log("New timestamp offset:", sourceBuffer.timestampOffset);
-		await videoElement.play();
-		// } catch (error) {
-		// 	console.error("Error during seeking:", error.message);
-		// }
-	}
-	videoElement.addEventListener('seeking', seeking);
 } else {
 	console.error('MediaSource API is not supported in this browser.');
 }
