@@ -1,7 +1,6 @@
 const videoElement = document.getElementById('videoPlayer');
 const videoUrl = 'http://localhost:3000/video/sample.mp4'; // Adjust as needed
 const durationUrl = 'http://localhost:3000/video-duration/sample.mp4';
-//const videoMimeType = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; // MIME type for H.264 + AAC
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;
@@ -31,15 +30,14 @@ if ('MediaSource' in window) {
 
 	const reloadVideoChunk = async (currentTime) => {
 		try {
-			// Remove previously buffered data
-			// mediaSource.removeSourceBuffer(sourceBuffer);
-			// sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
-			// Ceil to the next second
-			//await mediaSource.endOfStream();
-			let newTime = Math.ceil(currentTime);
-			await videoElement.pause();
+			// Clear existing buffer
+			sourceBuffer.abort();
+			//let newTime = Math.ceil(currentTime);
+			//return the closest 10 seconds
+			let newTime = Math.ceil(currentTime / 10) * 10;
+			//await videoElement.pause();
 			await fetchVideoChunk(newTime);
-			await videoElement.play();
+			//await videoElement.play();
 		} catch (error) {
 			console.error("Error during reload:", error.message);
 		}
@@ -76,7 +74,7 @@ if ('MediaSource' in window) {
 			? sourceBuffer.buffered.end(0)
 			: 0;
 
-		if (currentTime >= bufferEnd - 1) {
+		if (currentTime >= bufferEnd - 6) {
 			await reloadVideoChunk(currentTime);
 			await videoElement.play();
 		}
