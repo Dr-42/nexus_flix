@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Video Streaming</title>
+</head>
+
+<body>
+	<video id="videoPlayer" controls autoplay></video>
+
+	<script>
+		const videoElement = document.getElementById('videoPlayer');
+		const videoUrl = 'http://localhost:3000/video/sample.mp4'; // Adjust as needed
+		const durationUrl = 'http://localhost:3000/video-duration/sample.mp4';
+		const videoMimeType = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; // MIME type for H.264 + AAC
+
+		if ('MediaSource' in window) {
+			const mediaSource = new MediaSource();
+			videoElement.src = URL.createObjectURL(mediaSource);
+
+			mediaSource.addEventListener('sourceopen', async () => {
+				// const video_duration = await fetch(`${durationUrl}`);
+				// let duration = parseFloat(await video_duration.text());
+				// mediaSource.duration = duration;
+				let sourceBuffer;
+				try {
+					sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
+				} catch (error) {
+					console.error("Error adding SourceBuffer:", error.message);
+					return;
+				}
+
+				const fetchVideoChunk = async (startTime) => {
+					const response = await
+						fetch(`${videoUrl} ? timestamp = ${startTime}`, {
+							headers: {Range: `bytes = 0 -`}, // Initial request
+						});
+
+					if (!response.ok) {
+						console.error("Failed to fetch video chunk:", response.data);
+						return;
+					}
+
+					const headers = response.headers;
+
+					const data = await response.arrayBuffer();
+					sourceBuffer.appendBuffer(data);
+				};
+
+				let currentTime = 0;
+				await fetchVideoChunk(currentTime);
+
+				videoElement.addEventListener('seeking', async () => {
+					const newTime = videoElement.currentTime;
+
+					if (newTime !== currentTime) {
+						currentTime = newTime;
+						await fetchVideoChunk(currentTime);
+					}
+				});
+			});
+		} else {
+			console.error('MediaSource API is not supported in this browser.');
+		}
+	</script>
+</body>
+
+</html>
