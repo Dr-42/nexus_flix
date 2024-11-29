@@ -27,6 +27,15 @@ async fn serve_index() -> impl IntoResponse {
         .unwrap()
 }
 
+async fn serve_script() -> impl IntoResponse {
+    let script_text = include_str!("../script.js");
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "text/javascript")
+        .body(Body::new(script_text.to_string()))
+        .unwrap()
+}
+
 async fn get_video_metadata(input_path: &str) -> Result<f64, String> {
     println!("Input path: {}", input_path);
     let output = Command::new("ffprobe")
@@ -226,6 +235,7 @@ async fn serve_video_with_timestamp(
 async fn main() {
     let app = Router::new()
         .route("/", get(serve_index))
+        .route("/script.js", get(serve_script))
         .route("/video/:filename", get(serve_video_with_timestamp))
         .route("/video-duration/:filename", get(serve_video_duration));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
