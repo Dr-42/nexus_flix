@@ -80,20 +80,32 @@ if ('MediaSource' in window) {
 		}
 	});
 
-	videoElement.addEventListener('seeking', async () => {
-		if (!sourceBuffer || sourceBuffer.updating || isFetching) return;
-
+	const seeking = async () => {
 		const newTime = videoElement.currentTime;
 		console.log(`Seeking to time: ${newTime}`);
+		// if (!sourceBuffer || sourceBuffer.updating || isFetching) {
+		// 	let cause = isFetching ? "fetching" : "updating";
+		// 	console.log(`Cannot seek while ${cause}`);
+		// 	return;
+		// }
 
-		try {
-			// Remove previously buffered data
-			sourceBuffer.remove(0, sourceBuffer.buffered.end(0));
-			await fetchVideoChunk(newTime);
-		} catch (error) {
-			console.error("Error during seeking:", error.message);
-		}
-	});
+
+		//try {
+		// Clear existing buffer
+		console.log("Current timestamp offset:", sourceBuffer.timestampOffset);
+		sourceBuffer.abort();
+		//sourceBuffer.remove(0, sourceBuffer.buffered.end(0));
+		await videoElement.pause();
+		await fetchVideoChunk(newTime);
+		sourceBuffer.timestampOffset = newTime;
+		videoElement.currentTime = newTime;
+		console.log("New timestamp offset:", sourceBuffer.timestampOffset);
+		await videoElement.play();
+		// } catch (error) {
+		// 	console.error("Error during seeking:", error.message);
+		// }
+	}
+	videoElement.addEventListener('seeking', seeking);
 } else {
 	console.error('MediaSource API is not supported in this browser.');
 }
