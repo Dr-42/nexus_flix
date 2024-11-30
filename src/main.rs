@@ -1,7 +1,6 @@
 use axum::{
     body::Body,
     extract::{Path, Query},
-    http::HeaderMap,
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -66,7 +65,6 @@ async fn get_video_metadata(input_path: &str) -> Result<f64, String> {
     while lines.next().is_some() {}
 
     Ok(duration.unwrap())
-    //Ok(11000.0)
 }
 
 #[derive(Deserialize)]
@@ -76,7 +74,6 @@ struct VideoRequest {
 
 async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse {
     let input_path = format!("./videos/{}", filename);
-    //let input_path = "./videos/sample.mp4";
     let video_duration = get_video_metadata(&input_path).await;
 
     println!("Video duration: {:?}", video_duration);
@@ -97,26 +94,12 @@ async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse
         .unwrap()
 }
 
-fn parse_content_range(content_range: &str) -> Option<u64> {
-    if let Some(stripped) = content_range.strip_prefix("bytes-") {
-        stripped.split('-').next().and_then(|s| s.parse().ok())
-    } else {
-        None
-    }
-}
-
 // Serve video with timestamp-based range support
 async fn serve_video_with_timestamp(
     Path(filename): Path<String>,
     Query(params): Query<VideoRequest>,
-    _headers: HeaderMap,
 ) -> impl IntoResponse {
     let input_path = format!("./videos/{}", filename);
-    //let input_path = "./videos/sample.mp4";
-
-    let video_bitrate = 2000000.0;
-    let audio_bitrate = 128000.0;
-    //let audio_bitrate = 0.0;
 
     // Get timestamp from the query parameters or default to 0
     let start_timestamp = params.timestamp.unwrap_or(0.0);
@@ -129,8 +112,7 @@ async fn serve_video_with_timestamp(
 
     println!("Start timestamp: {}s", start_timestamp);
 
-    let video_duration = get_video_metadata(&input_path).await.unwrap();
-    let estimated_size = (video_bitrate + audio_bitrate) * video_duration / 8.0;
+    let chunk_duration = 10.0;
 
     // Spawn FFmpeg transcoding process
     let (tx, _rx): (Sender<()>, Receiver<()>) = watch::channel(());
@@ -141,7 +123,7 @@ async fn serve_video_with_timestamp(
             .args(["-hwaccel_output_format", "cuda"])
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &input_path])
-            .args(["-t", "10.0"])
+            .args(["-t", &chunk_duration.to_string()])
             .args(["-c:v", "h264_nvenc"])
             .args(["-preset", "fast"])
             .args(["-b:v", "2M"])
@@ -157,12 +139,6 @@ async fn serve_video_with_timestamp(
 
         if let Some(mut stdout) = ffmpeg.stdout.take() {
             let mut read_buf = vec![0; 1024 * 1024 * 12];
-            // if let Ok(bytes_read) = stdout.read_exact(&mut read_buf).await {
-            //     let mut buffer_writer = buffer_clone.lock().unwrap();
-            //     buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
-            // } else {
-            //     eprintln!("Failed to read FFmpeg stdout");
-            // }
             loop {
                 match stdout.read(&mut read_buf).await {
                     Ok(0) => break,
@@ -193,13 +169,6 @@ async fn serve_video_with_timestamp(
 
     let mut res = Response::builder().status(206).body(body).unwrap();
 
-    let content_range_header = _headers.get(header::RANGE);
-    let requested_content_range = if let Some(content_range_header) = content_range_header {
-        parse_content_range(content_range_header.to_str().unwrap())
-    } else {
-        None
-    };
-
     let response_headers = res.headers_mut();
     response_headers.insert(header::CONTENT_TYPE, "video/mp4".parse().unwrap());
     response_headers.insert(
@@ -207,27 +176,6 @@ async fn serve_video_with_timestamp(
         transcoded_size.to_string().parse().unwrap(),
     );
 
-    if let Some(requested_content_range) = requested_content_range {
-        println!("Requested content range: {}", requested_content_range);
-        response_headers.insert(
-            header::CONTENT_RANGE,
-            format!(
-                "bytes {}-{}/{}",
-                requested_content_range,
-                requested_content_range + transcoded_size as u64,
-                estimated_size as u64
-            )
-            .parse()
-            .unwrap(),
-        );
-    } else {
-        response_headers.insert(
-            header::CONTENT_RANGE,
-            format!("bytes 0-{}/{}", transcoded_size, estimated_size as u64)
-                .parse()
-                .unwrap(),
-        );
-    }
     res
 }
 
