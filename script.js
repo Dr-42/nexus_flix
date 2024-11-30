@@ -1,6 +1,6 @@
 const videoElement = document.getElementById('videoPlayer');
-const videoUrl = '/video/sample.mp4'; // Adjust as needed
-const durationUrl = '/video-duration/sample.mp4';
+const videoUrl = '/video/sample.mkv'; // Adjust as needed
+const durationUrl = '/video-duration/sample.mkv';
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;

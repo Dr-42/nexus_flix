@@ -76,7 +76,7 @@ struct VideoRequest {
 
 async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse {
     let input_path = format!("./videos/{}", filename);
-    let input_path = "./videos/sample.mp4";
+    //let input_path = "./videos/sample.mp4";
     let video_duration = get_video_metadata(&input_path).await;
 
     println!("Video duration: {:?}", video_duration);
@@ -112,7 +112,7 @@ async fn serve_video_with_timestamp(
     _headers: HeaderMap,
 ) -> impl IntoResponse {
     let input_path = format!("./videos/{}", filename);
-    let input_path = "./videos/sample.mp4";
+    //let input_path = "./videos/sample.mp4";
 
     let video_bitrate = 2000000.0;
     let audio_bitrate = 128000.0;
