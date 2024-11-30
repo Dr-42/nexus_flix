@@ -1,6 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Path, Query},
+    extract::Query,
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -69,11 +69,17 @@ async fn get_video_metadata(input_path: &str) -> Result<f64, String> {
 
 #[derive(Deserialize)]
 struct VideoRequest {
+    path: String,
     timestamp: Option<f64>,
 }
 
-async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse {
-    let input_path = format!("./videos/{}", filename);
+#[derive(Deserialize)]
+struct VideoDurationRequest {
+    path: String,
+}
+
+async fn serve_video_duration(Query(params): Query<VideoDurationRequest>) -> impl IntoResponse {
+    let input_path = params.path;
     let video_duration = get_video_metadata(&input_path).await;
 
     println!("Video duration: {:?}", video_duration);
@@ -95,11 +101,10 @@ async fn serve_video_duration(Path(filename): Path<String>) -> impl IntoResponse
 }
 
 // Serve video with timestamp-based range support
-async fn serve_video_with_timestamp(
-    Path(filename): Path<String>,
-    Query(params): Query<VideoRequest>,
-) -> impl IntoResponse {
-    let input_path = format!("./videos/{}", filename);
+async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> impl IntoResponse {
+    let input_path = params.path;
+
+    println!("Input path: {}", input_path);
 
     // Get timestamp from the query parameters or default to 0
     let start_timestamp = params.timestamp.unwrap_or(0.0);
@@ -184,8 +189,8 @@ async fn main() {
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/script.js", get(serve_script))
-        .route("/video/:filename", get(serve_video_with_timestamp))
-        .route("/video-duration/:filename", get(serve_video_duration));
+        .route("/video", get(serve_video_with_timestamp))
+        .route("/video-duration", get(serve_video_duration));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
     axum::serve(listener, app).await.unwrap();

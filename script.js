@@ -1,6 +1,6 @@
 const videoElement = document.getElementById('videoPlayer');
-const videoUrl = '/video/sample.mkv'; // Adjust as needed
-const durationUrl = '/video-duration/sample.mkv';
+const videoPath = '/run/media/spandan/Spandy HDD/Series/Boku no Hero Academia/Season 6/Boku no Hero Academia S06E22.mp4';
+//const videoPath = '/run/media/spandan/Spandy HDD/Movies/Thor: Ragnarok/Thor: Ragnarok.mkv'
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;
@@ -11,6 +11,8 @@ let isSeeking = false;
 if ('MediaSource' in window) {
 	mediaSource = new MediaSource();
 	videoElement.src = URL.createObjectURL(mediaSource);
+
+	let videoPathWeb = encodeURI(videoPath);
 
 	videoElement.addEventListener('seeking', () => {
 		isSeeking = true;
@@ -25,7 +27,8 @@ if ('MediaSource' in window) {
 		isFetching = true;
 		try {
 			console.log(`Fetching video chunk for time: ${startTime}`);
-			const response = await fetch(`${videoUrl}?timestamp=${startTime}`);
+			//const response = await fetch(`${videoUrl}?timestamp=${startTime}`);
+			const response = await fetch(`/video?path=${videoPathWeb}&timestamp=${startTime}`);
 			if (!response.ok) throw new Error("Failed to fetch video chunk");
 
 			const data = await response.arrayBuffer();
@@ -66,7 +69,7 @@ if ('MediaSource' in window) {
 	mediaSource.addEventListener('sourceopen', async () => {
 		try {
 			// Set video duration
-			const response = await fetch(durationUrl);
+			const response = await fetch(`/video-duration?path=${videoPathWeb}`);
 			if (!response.ok) throw new Error("Failed to fetch video duration");
 			videoDuration = parseFloat(await response.text());
 			mediaSource.duration = videoDuration;
