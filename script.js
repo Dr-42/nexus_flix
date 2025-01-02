@@ -76,7 +76,7 @@ if ('MediaSource' in window) {
 
 			// Initialize SourceBuffer
 			sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
-			//sourceBuffer.mode = 'sequence';
+			sourceBuffer.mode = 'segments';
 
 			sourceBuffer.addEventListener('error', (e) => {
 				console.error("SourceBuffer error:", e);

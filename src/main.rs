@@ -8,6 +8,7 @@ use axum::{
 use hyper::header::{self};
 use serde::Deserialize;
 use std::{
+    env::args,
     process::Stdio,
     sync::{Arc, Mutex},
 };
@@ -135,7 +136,10 @@ async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> impl 
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args(["-c:a", "libopus"])
             .args(["-b:a", "128k"])
-            .args(["-movflags", "frag_keyframe+empty_moov"])
+            .args([
+                "-movflags",
+                "frag_keyframe+empty_moov+faststart+default_base_moof",
+            ])
             .args(["-f", "mp4"])
             .args(["pipe:1"])
             .stdout(Stdio::piped())
@@ -186,12 +190,18 @@ async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> impl 
 
 #[tokio::main]
 async fn main() {
+    let port = if let Some(port) = args().nth(1) {
+        port.parse().expect("Invalid port")
+    } else {
+        3000
+    };
     let app = Router::new()
         .route("/", get(serve_index))
         .route("/script.js", get(serve_script))
         .route("/video", get(serve_video_with_timestamp))
         .route("/video-duration", get(serve_video_duration));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let addr = format!("0.0.0.0:{}", port);
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
     axum::serve(listener, app).await.unwrap();
 }
