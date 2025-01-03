@@ -1,6 +1,5 @@
 const videoElement = document.getElementById('videoPlayer');
 const videoPath = '/run/media/spandan/Spandy HDD/Series/Boku no Hero Academia/Season 6/Boku no Hero Academia S06E22.mp4';
-//const videoPath = '/run/media/spandan/Spandy HDD/Movies/Thor: Ragnarok/Thor: Ragnarok.mkv'
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;
@@ -14,8 +13,13 @@ if ('MediaSource' in window) {
 
 	let videoPathWeb = encodeURI(videoPath);
 
-	videoElement.addEventListener('seeking', () => {
+	videoElement.addEventListener('seeking', async () => {
 		isSeeking = true;
+		if (sourceBuffer && !sourceBuffer.updating && !isFetching) {
+			const currentTime = videoElement.currentTime;
+			let newTime = await reloadVideoChunk(currentTime, false);
+			console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
+		}
 	});
 
 	videoElement.addEventListener('seeked', () => {
@@ -41,11 +45,16 @@ if ('MediaSource' in window) {
 		}
 	};
 
-	const reloadVideoChunk = async (currentTime) => {
+	const reloadVideoChunk = async (currentTime, ceil) => {
 		try {
 			sourceBuffer.abort();
 			//return the closest 10 seconds
-			let newTime = Math.ceil(currentTime / 10) * 10;
+			let newTime;
+			if (ceil) {
+				newTime = Math.ceil(currentTime / 10) * 10;
+			} else {
+				newTime = currentTime;
+			}
 			sourceBuffer.timestampOffset = newTime;
 			await fetchVideoChunk(newTime);
 			return newTime;
@@ -98,14 +107,12 @@ if ('MediaSource' in window) {
 		// 	: 0;
 		const bufferEnd = getRelevantBufferEnd();
 		if (currentTime >= bufferEnd - 2) {
-			let newTime = await reloadVideoChunk(currentTime);
+			let newTime = await reloadVideoChunk(currentTime, true);
 			if (isSeeking) {
 				console.log(`Seeking to time: ${newTime}`);
 				isSeeking = false;
 				videoElement.currentTime = newTime;
 			}
-
-			await videoElement.play();
 		}
 	});
 
