@@ -1,11 +1,30 @@
 const videoElement = document.getElementById('videoPlayer');
-const videoPath = '/run/media/spandan/Spandy HDD/Series/Boku no Hero Academia/Season 6/Boku no Hero Academia S06E22.mp4';
+const videoPath = '/run/media/spandan/Spandy HDD/DownsProg/Sousou.no.Frieren.S01E14.Hulu.1080p.AV1.Opus.Dual.Multi[HR-SO]/[HR] Frieren S01E14 [32274800].mkv';
 const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
 let sourceBuffer;
 let mediaSource;
 let isFetching = false;
 let videoDuration = 0;
 let isSeeking = false;
+
+class Track {
+	static fromJson(json) {
+		this.id = json.id;
+		this.kind = json.kind;
+		this.label = json.label;
+	}
+
+	static fromJsonArray(jsonArray) {
+		return jsonArray.map((json) => Track.fromJson(json));
+	}
+}
+
+class VideoMetadata {
+	fromJson(json) {
+		this.duration = json.duration;
+		this.tracks = Track.fromJsonArray(json.tracks);
+	}
+}
 
 if ('MediaSource' in window) {
 	mediaSource = new MediaSource();
@@ -78,9 +97,16 @@ if ('MediaSource' in window) {
 	mediaSource.addEventListener('sourceopen', async () => {
 		try {
 			// Set video duration
-			const response = await fetch(`/video-duration?path=${videoPathWeb}`);
+			const response = await fetch(`/video-data?path=${videoPathWeb}`);
 			if (!response.ok) throw new Error("Failed to fetch video duration");
-			videoDuration = parseFloat(await response.text());
+
+			const data = await response.json();
+			const videoMetadata = new VideoMetadata();
+			videoMetadata.fromJson(data);
+			videoDuration = videoMetadata.duration;
+
+			console.log(`Video duration: ${videoDuration}`);
+
 			mediaSource.duration = videoDuration;
 
 			// Initialize SourceBuffer
