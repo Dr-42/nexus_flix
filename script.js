@@ -1,17 +1,12 @@
-const videoElement = document.getElementById('videoPlayer');
-const videoPath = '/run/media/spandan/Spandy HDD/DownsProg/Sousou.no.Frieren.S01E14.Hulu.1080p.AV1.Opus.Dual.Multi[HR-SO]/[HR] Frieren S01E14 [32274800].mkv';
-const videoMimeType = 'video/mp4; codecs="avc1.42E01E, opus"';
-let sourceBuffer;
-let mediaSource;
-let isFetching = false;
-let videoDuration = 0;
-let isSeeking = false;
-
 class Track {
+	constructor(id, kind, label) {
+		this.id = id;
+		this.kind = kind;
+		this.label = label;
+	}
+
 	static fromJson(json) {
-		this.id = json.id;
-		this.kind = json.kind;
-		this.label = json.label;
+		return new Track(json.id, json.kind, json.label);
 	}
 
 	static fromJsonArray(jsonArray) {
@@ -20,128 +15,163 @@ class Track {
 }
 
 class VideoMetadata {
-	fromJson(json) {
-		this.duration = json.duration;
-		this.tracks = Track.fromJsonArray(json.tracks);
+	constructor(duration, tracks) {
+		this.duration = duration;
+		this.tracks = tracks;
+	}
+
+	static fromJson(json) {
+		const tracks = Track.fromJsonArray(json.tracks);
+		return new VideoMetadata(json.duration, tracks);
 	}
 }
 
-if ('MediaSource' in window) {
-	mediaSource = new MediaSource();
-	videoElement.src = URL.createObjectURL(mediaSource);
+class VideoPlayer {
+	constructor(videoElementId, videoPath, mimeType) {
+		this.videoElement = document.getElementById(videoElementId);
+		this.videoPath = encodeURI(videoPath);
+		this.mimeType = mimeType;
+		this.mediaSource = null;
+		this.sourceBuffer = null;
+		this.isFetching = false;
+		this.isSeeking = false;
+		this.videoDuration = 0;
 
-	let videoPathWeb = encodeURI(videoPath);
-
-	videoElement.addEventListener('seeking', async () => {
-		isSeeking = true;
-		if (sourceBuffer && !sourceBuffer.updating && !isFetching) {
-			const currentTime = videoElement.currentTime;
-			let newTime = await reloadVideoChunk(currentTime, false);
-			console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
-		}
-	});
-
-	videoElement.addEventListener('seeked', () => {
-		isSeeking = false;
-	});
-
-	const fetchVideoChunk = async (startTime) => {
-		if (isFetching || !sourceBuffer || sourceBuffer.updating) return;
-		isFetching = true;
-		try {
-			console.log(`Fetching video chunk for time: ${startTime}`);
-			//const response = await fetch(`${videoUrl}?timestamp=${startTime}`);
-			const response = await fetch(`/video?path=${videoPathWeb}&timestamp=${startTime}`);
-			if (!response.ok) throw new Error("Failed to fetch video chunk");
-
-			const data = await response.arrayBuffer();
-			sourceBuffer.appendBuffer(data);
-			console.log(`Fetched and appended video chunk for time: ${startTime}`);
-		} catch (error) {
-			console.error("Error fetching video chunk:", error.message);
-		} finally {
-			isFetching = false;
-		}
-	};
-
-	const reloadVideoChunk = async (currentTime, ceil) => {
-		try {
-			sourceBuffer.abort();
-			//return the closest 10 seconds
-			let newTime;
-			if (ceil) {
-				newTime = Math.ceil(currentTime / 10) * 10;
-			} else {
-				newTime = currentTime;
-			}
-			sourceBuffer.timestampOffset = newTime;
-			await fetchVideoChunk(newTime);
-			return newTime;
-		} catch (error) {
-			console.error("Error during reload:", error.message);
+		if ('MediaSource' in window) {
+			this.initializeMediaSource();
+			this.addEventListeners();
+		} else {
+			console.error('MediaSource API is not supported in this browser.');
 		}
 	}
 
-	const getRelevantBufferEnd = () => {
+	initializeMediaSource() {
+		this.mediaSource = new MediaSource();
+		this.videoElement.src = URL.createObjectURL(this.mediaSource);
+
+		this.mediaSource.addEventListener('sourceopen', async () => {
+			try {
+				await this.initializeSourceBuffer();
+				await this.loadInitialMetadata();
+				await this.fetchVideoChunk(0.0);
+			} catch (error) {
+				console.error('Error initializing MediaSource:', error.message);
+			}
+		});
+	}
+
+	addEventListeners() {
+		this.videoElement.addEventListener('seeking', async () => {
+			this.isSeeking = true;
+			if (this.sourceBuffer && !this.sourceBuffer.updating && !this.isFetching) {
+				const currentTime = this.videoElement.currentTime;
+				const newTime = await this.reloadVideoChunk(currentTime, false);
+				console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
+			}
+		});
+
+		this.videoElement.addEventListener('seeked', () => {
+			this.isSeeking = false;
+		});
+
+		this.videoElement.addEventListener('timeupdate', async () => {
+			if (!this.sourceBuffer || this.sourceBuffer.updating || this.isFetching) return;
+
+			const currentTime = this.videoElement.currentTime;
+			const bufferEnd = this.getRelevantBufferEnd();
+
+			if (currentTime >= bufferEnd - 2) {
+				const newTime = await this.reloadVideoChunk(currentTime, true);
+				if (this.isSeeking) {
+					console.log(`Seeking to time: ${newTime}`);
+					this.isSeeking = false;
+					this.videoElement.currentTime = newTime;
+				}
+			}
+		});
+	}
+
+	async initializeSourceBuffer() {
+		this.sourceBuffer = this.mediaSource.addSourceBuffer(this.mimeType);
+		this.sourceBuffer.mode = 'segments';
+
+		this.sourceBuffer.addEventListener('error', (e) => {
+			console.error('SourceBuffer error:', e);
+		});
+	}
+
+	async loadInitialMetadata() {
+		const response = await fetch(`/video-data?path=${this.videoPath}`);
+		if (!response.ok) throw new Error('Failed to fetch video duration');
+
+		const data = await response.json();
+		const videoMetadata = VideoMetadata.fromJson(data);
+
+		this.videoDuration = videoMetadata.duration;
+		this.mediaSource.duration = this.videoDuration;
+
+		console.log(`Video duration: ${this.videoDuration}`);
+	}
+
+	async fetchVideoChunk(startTime) {
+		if (this.isFetching || !this.sourceBuffer || this.sourceBuffer.updating) return;
+
+		this.isFetching = true;
+		try {
+			console.log(`Fetching video chunk for time: ${startTime}`);
+
+			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}`);
+			if (!response.ok) throw new Error('Failed to fetch video chunk');
+
+			const data = await response.arrayBuffer();
+			this.sourceBuffer.appendBuffer(data);
+
+			console.log(`Fetched and appended video chunk for time: ${startTime}`);
+		} catch (error) {
+			console.error('Error fetching video chunk:', error.message);
+		} finally {
+			this.isFetching = false;
+		}
+	}
+
+	async reloadVideoChunk(currentTime, ceil) {
+		try {
+			this.sourceBuffer.abort();
+
+			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
+			this.sourceBuffer.timestampOffset = newTime;
+
+			await this.fetchVideoChunk(newTime);
+			return newTime;
+		} catch (error) {
+			console.error('Error during reload:', error.message);
+		}
+	}
+
+	getRelevantBufferEnd() {
 		let bufferEnd = 0;
-		for (let i = 0; i < sourceBuffer.buffered.length; i++) {
-			const start = sourceBuffer.buffered.start(i);
-			const end = sourceBuffer.buffered.end(i);
-			if (start <= videoElement.currentTime && end > bufferEnd) {
+
+		for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
+			const start = this.sourceBuffer.buffered.start(i);
+			const end = this.sourceBuffer.buffered.end(i);
+
+			if (start <= this.videoElement.currentTime && end > bufferEnd) {
 				bufferEnd = end;
 			}
 		}
+
 		return bufferEnd;
 	}
-
-	mediaSource.addEventListener('sourceopen', async () => {
-		try {
-			// Set video duration
-			const response = await fetch(`/video-data?path=${videoPathWeb}`);
-			if (!response.ok) throw new Error("Failed to fetch video duration");
-
-			const data = await response.json();
-			const videoMetadata = new VideoMetadata();
-			videoMetadata.fromJson(data);
-			videoDuration = videoMetadata.duration;
-
-			console.log(`Video duration: ${videoDuration}`);
-
-			mediaSource.duration = videoDuration;
-
-			// Initialize SourceBuffer
-			sourceBuffer = mediaSource.addSourceBuffer(videoMimeType);
-			sourceBuffer.mode = 'segments';
-
-			sourceBuffer.addEventListener('error', (e) => {
-				console.error("SourceBuffer error:", e);
-			});
-
-			// Fetch initial chunk
-			await fetchVideoChunk(0.0);
-		} catch (error) {
-			console.error("Error initializing MediaSource:", error.message);
-		}
-	});
-
-	videoElement.addEventListener('timeupdate', async () => {
-		if (!sourceBuffer || sourceBuffer.updating || isFetching) return;
-
-		const currentTime = videoElement.currentTime;
-		// const bufferEnd = sourceBuffer.buffered.length > 0
-		// 	? sourceBuffer.buffered.end(0)
-		// 	: 0;
-		const bufferEnd = getRelevantBufferEnd();
-		if (currentTime >= bufferEnd - 2) {
-			let newTime = await reloadVideoChunk(currentTime, true);
-			if (isSeeking) {
-				console.log(`Seeking to time: ${newTime}`);
-				isSeeking = false;
-				videoElement.currentTime = newTime;
-			}
-		}
-	});
-
-} else {
-	console.error('MediaSource API is not supported in this browser.');
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+	const videoPlayer = new VideoPlayer(
+		'videoPlayer',
+		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
+		'video/mp4; codecs="avc1.42E01E, opus"'
+	);
+	videoPlayer.initializeMediaSource();
+	videoPlayer.addEventListeners();
+	videoPlayer.loadInitialMetadata();
+	videoPlayer.fetchVideoChunk(0.0);
+});

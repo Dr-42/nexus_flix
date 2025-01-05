@@ -101,7 +101,7 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
             .args(["-i", &input_path])
             .args(["-t", &chunk_duration.to_string()])
             .args(["-c:v", "h264_nvenc"])
-            .args(["-vf", "scale_cuda=format=yuv420p"])
+            .args(["-vf", "scale_cuda=1080:720:format=yuv420p"])
             .args(["-preset", "p5"])
             .args(["-b:v", "2M"])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
