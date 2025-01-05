@@ -25,25 +25,6 @@ pub struct VideoMetadataRequest {
     pub path: String,
 }
 
-#[derive(Serialize)]
-pub struct AudioData {
-    pub id: u64,
-    pub data: Vec<u8>,
-}
-
-#[derive(Serialize)]
-pub struct SubtitleData {
-    pub id: u64,
-    pub data: Vec<u8>,
-}
-
-#[derive(Serialize)]
-pub struct VideoResponse {
-    pub video_data: Vec<u8>,
-    pub audio_data: Vec<AudioData>,
-    pub subtitle_data: Vec<SubtitleData>,
-}
-
 pub async fn serve_video_metadata(Query(params): Query<VideoMetadataRequest>) -> impl IntoResponse {
     let input_path = params.path;
     let video_metadata = video_helpers::get_video_metadata(&input_path).await;
