@@ -15,7 +15,7 @@ async fn main() {
         .route("/", get(web_servers::serve_index))
         .route("/script.js", get(web_servers::serve_script))
         .route("/video", get(video_servers::serve_video_with_timestamp))
-        .route("/video-data", get(video_servers::serve_video_data));
+        .route("/video-data", get(video_servers::serve_video_metadata));
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 

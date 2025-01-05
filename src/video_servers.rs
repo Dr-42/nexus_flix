@@ -24,29 +24,25 @@ pub struct VideoRequest {
 }
 
 #[derive(Deserialize)]
-pub struct VideoDurationRequest {
+pub struct VideoMetadataRequest {
     pub path: String,
 }
 
-pub async fn serve_video_data(Query(params): Query<VideoDurationRequest>) -> impl IntoResponse {
+pub async fn serve_video_metadata(Query(params): Query<VideoMetadataRequest>) -> impl IntoResponse {
     let input_path = params.path;
     let video_metadata = video_helpers::get_video_metadata(&input_path).await;
-
-    println!("Video duration: {:#?}", video_metadata);
-
-    if video_metadata.is_err() {
-        return Response::builder()
+    match video_metadata {
+        Err(e) => Response::builder()
             .status(404)
             .header(header::CONTENT_TYPE, "text/plain")
-            .body(Body::new("Video not found".to_string()))
-            .unwrap();
+            .body(Body::new(format!("Video metadata error: {}", e)))
+            .unwrap(),
+        Ok(data) => Response::builder()
+            .status(200)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::new(serde_json::to_string(&data).unwrap()))
+            .unwrap(),
     }
-    let video_metadata = video_metadata.unwrap();
-    Response::builder()
-        .status(200)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::new(serde_json::to_string(&video_metadata).unwrap()))
-        .unwrap()
 }
 
 // Serve video with timestamp-based range support
