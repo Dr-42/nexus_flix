@@ -57,3 +57,21 @@ pub async fn serve_video(Query(params): Query<VideoRequest>) -> impl IntoRespons
         }
     }
 }
+
+pub async fn serve_video_subs(Query(params): Query<VideoRequest>) -> impl IntoResponse {
+    let input_path = params.path;
+    let video_subs = video_helpers::get_video_subs(&input_path).await;
+    match video_subs {
+        Ok(data) => Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .body(Body::from(data.as_bytes().await))
+            .unwrap(),
+        Err(e) => {
+            println!("Video subs error: {}", e);
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(format!("Video subs error: {}", e)))
+                .unwrap()
+        }
+    }
+}

@@ -157,16 +157,8 @@ class VideoPlayer {
 			// Append audio data to the audio source buffers
 			const audioSourceBuffer = this.audioSourceBuffer;
 			if (audioSourceBuffer && !audioSourceBuffer.updating) {
-				audioSourceBuffer.appendBuffer(parsedData.audioTracks[0].data);
+				audioSourceBuffer.appendBuffer(parsedData.audioTracks[1].data);
 			}
-
-			// Append subtitle data to the subtitle source buffers
-			// for (let i = 0; i < parsedData.subtitleTracks.length; i++) {
-			// 	const subtitleSourceBuffer = this.subtitleSourceBuffers[i];
-			// 	if (subtitleSourceBuffer && !subtitleSourceBuffer.updating) {
-			// 		subtitleSourceBuffer.appendBuffer(parsedData.subtitleTracks[i].data);
-			// 	}
-			// }
 		} catch (error) {
 			console.error('Error fetching video chunk:', error);
 		} finally {
@@ -213,10 +205,8 @@ class VideoResponseParser {
 
 		// Parsed fields
 		this.numAudioTracks = 0;
-		this.numSubtitleTracks = 0;
 		this.videoData = null;
 		this.audioTracks = [];
-		this.subtitleTracks = [];
 	}
 
 	// Helper method to read a Uint32
@@ -257,14 +247,6 @@ class VideoResponseParser {
 				throw new Error(`Invalid number of audio tracks: ${this.numAudioTracks}`);
 			}
 			console.log(`Number of audio tracks: ${this.numAudioTracks}`);
-
-			// Read and validate the number of subtitle tracks
-			this.numSubtitleTracks = this.readUint32();
-			if (this.numSubtitleTracks < 0 || this.numSubtitleTracks > 100) {
-				throw new Error(`Invalid number of subtitle tracks: ${this.numSubtitleTracks}`);
-			}
-			console.log(`Number of subtitle tracks: ${this.numSubtitleTracks}`);
-
 			// Read and validate the video track length
 			const videoTrackLength = Number(this.readBigUint64());
 			if (videoTrackLength <= 0 || videoTrackLength > this.dataView.byteLength) {
@@ -287,8 +269,71 @@ class VideoResponseParser {
 				this.audioTracks.push({ id: trackId, data: trackData });
 			}
 
-			// Read and store subtitle tracks
-			for (let i = 0; i < this.numSubtitleTracks; i++) {
+			// Return parsed data
+			return {
+				numAudioTracks: this.numAudioTracks,
+				videoData: this.videoData,
+				audioTracks: this.audioTracks,
+			};
+		} catch (error) {
+			console.error('Error parsing video data:', error.message);
+			throw error;
+		}
+	}
+}
+
+class SubtitleResponseParser {
+	constructor(arrayBuffer) {
+		this.arrayBuffer = arrayBuffer;
+		this.dataView = new DataView(arrayBuffer);
+		this.offset = 0;
+
+		// Parsed fields
+		this.numSubtitles = 0;
+		this.subtitles = [];
+	}
+
+	// Helper method to read a Uint32
+	readUint32() {
+		const value = this.dataView.getUint32(this.offset, true);
+		this.offset += 4;
+		return value;
+	}
+
+	// Helper method to read a BigUint64 safely
+	readBigUint64() {
+		if (this.offset + 8 > this.dataView.byteLength) {
+			throw new Error(`Cannot read BigUint64, insufficient data at offset ${this.offset}`);
+		}
+		const value = this.dataView.getBigUint64(this.offset, true);
+		this.offset += 8;
+		return value;
+	}
+
+	// Helper method to read a chunk of data safely
+	readBytes(length) {
+		if (this.offset + length > this.dataView.byteLength) {
+			throw new Error(
+				`Cannot read ${length} bytes, only ${this.dataView.byteLength - this.offset} remaining`
+			);
+		}
+		const value = new Uint8Array(this.arrayBuffer, this.offset, length);
+		this.offset += length;
+		return value;
+	}
+
+	// Main method to parse the binary data
+	parse() {
+		try {
+			// Read and validate the number of subtitles
+			this.numSubtitles = this.readUint32();
+			if (this.numSubtitles < 0 || this.numSubtitles > 100) {
+				throw new Error(`Invalid number of subtitles: ${this.numSubtitles}`);
+			}
+			console.log(`Number of subtitles: ${this.numSubtitles}`);
+
+			// Read and store subtitles
+			for (let i = 0; i < this.numSubtitles; i++) {
 				const trackId = this.readBigUint64();
 				const trackLength = Number(this.readBigUint64());
 
@@ -298,19 +343,16 @@ class VideoResponseParser {
 				const trackData = this.readBytes(trackLength);
 
 				console.log(`Subtitle track ID: ${trackId}, length: ${trackLength}`);
-				this.subtitleTracks.push({ id: trackId, data: trackData });
+				this.subtitles.push({ id: trackId, data: trackData });
 			}
 
 			// Return parsed data
 			return {
-				numAudioTracks: this.numAudioTracks,
-				numSubtitleTracks: this.numSubtitleTracks,
-				videoData: this.videoData,
-				audioTracks: this.audioTracks,
-				subtitleTracks: this.subtitleTracks,
+				numSubtitles: this.numSubtitles,
+				subtitles: this.subtitles,
 			};
 		} catch (error) {
-			console.error('Error parsing video data:', error.message);
+			console.error('Error parsing subtitle data:', error.message);
 			throw error;
 		}
 	}
@@ -321,8 +363,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 		'videoPlayer',
 		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
 	);
-	await videoPlayer.initializeMediaSource();
-	videoPlayer.addEventListeners();
-	await videoPlayer.loadInitialMetadata();
-	await videoPlayer.fetchVideoChunk(0.0);
+	if (videoPlayer) {
+		console.log('Video player initialized');
+	}
 });

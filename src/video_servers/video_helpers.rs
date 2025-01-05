@@ -7,7 +7,7 @@ use tokio::{
     sync::Mutex,
 };
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, PartialEq, Eq)]
 pub enum Tracktype {
     Audio,
     Video,
@@ -119,22 +119,14 @@ pub struct AudioData {
 }
 
 #[derive(Default, Debug)]
-pub struct SubtitleData {
-    pub id: u64,
-    pub data: Vec<u8>,
-}
-
-#[derive(Default, Debug)]
 pub struct VideoResponse {
     pub video_data: Vec<u8>,
     pub audio_data: Vec<AudioData>,
-    pub subtitle_data: Vec<SubtitleData>,
 }
 
 // NOTE: The binary data is serialized as
 // [
 //     u32 -> number of audio tracks,
-//     u32 -> number of subtitle tracks,
 //     u64 -> data length of the video track,
 //     Vec<u8> -> video track data,
 //     -- For each audio track --
@@ -142,19 +134,11 @@ pub struct VideoResponse {
 //     u64 -> data length of the audio track,
 //     Vec<u8> -> audio track data,
 //     --
-//     -- For each subtitle track --
-//     u64 -> subtitle track id,
-//     u64 ->  data length of subtitle track
-//     Vec<u8> -> subtitle track data,
-//     ---
 // ]
 impl VideoResponse {
     pub async fn as_bytes(&self) -> Vec<u8> {
         let mut data = Vec::new();
         data.write_u32_le(self.audio_data.len() as u32)
-            .await
-            .unwrap();
-        data.write_u32_le(self.subtitle_data.len() as u32)
             .await
             .unwrap();
         data.write_u64_le(self.video_data.len() as u64)
@@ -165,11 +149,6 @@ impl VideoResponse {
             data.write_u64_le(audio.id).await.unwrap();
             data.write_u64_le(audio.data.len() as u64).await.unwrap();
             data.write_all(&audio.data).await.unwrap();
-        }
-        for subtitle in &self.subtitle_data {
-            data.write_u64_le(subtitle.id).await.unwrap();
-            data.write_u64_le(subtitle.data.len() as u64).await.unwrap();
-            data.write_all(&subtitle.data).await.unwrap();
         }
         data
     }
@@ -193,9 +172,7 @@ pub async fn get_video_data(path: &str, start_timestamp: f64) -> Result<VideoRes
                 video_data.audio_data.push(audio_stream);
             }
             Tracktype::Subtitle => {
-                let subtitle_stream = get_subtitle(path, track.id, start_timestamp, duration).await;
-                println!("Subtitle data: {}", subtitle_stream.data.len());
-                video_data.subtitle_data.push(subtitle_stream);
+                continue;
             }
         }
     }
@@ -269,6 +246,7 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
             .args(["-c:a", "libfdk_aac"])
+            .args(["-map", format!("0:a:{}", id).as_str()])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args([
                 "-movflags",
@@ -305,7 +283,61 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
     AudioData { id, data }
 }
 
-async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) -> SubtitleData {
+#[derive(Serialize)]
+pub struct SubtitleData {
+    pub id: u64,
+    pub data: Vec<u8>,
+}
+
+#[derive(Serialize)]
+pub struct VideoSubs {
+    pub num_subs: u32,
+    pub subs: Vec<SubtitleData>,
+}
+
+// NOTE: Video subs binary representation
+// [
+//     u32 -> number of subtitle tracks,
+//     -- For each subtitle track --
+//     u64 -> subtitle track id,
+//     u64 ->  data length of subtitle track
+//     Vec<u8> -> subtitle track data,
+//     ---
+// ]
+impl VideoSubs {
+    pub async fn as_bytes(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.write_u32_le(self.num_subs).await.unwrap();
+        for sub in &self.subs {
+            data.write_u64_le(sub.id).await.unwrap();
+            data.write_u64_le(sub.data.len() as u64).await.unwrap();
+            data.write_all(&sub.data).await.unwrap();
+        }
+        data
+    }
+}
+
+pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
+    let video_metadata = get_video_metadata(path).await?;
+    let sub_tracks = video_metadata
+        .tracks
+        .iter()
+        .filter(|t| t.kind == Tracktype::Subtitle)
+        .collect::<Vec<_>>();
+    let num_subs = sub_tracks.len() as u32;
+    let mut subs = Vec::new();
+    for sub_track in sub_tracks {
+        let sub = get_subtitle(path, sub_track.id).await;
+        subs.push(SubtitleData {
+            id: sub_track.id,
+            data: sub,
+        });
+    }
+
+    Ok(VideoSubs { num_subs, subs })
+}
+
+async fn get_subtitle(path: &str, id: u64) -> Vec<u8> {
     let buffer = Arc::new(Mutex::new(Vec::new()));
     let buffer_clone = buffer.clone();
     let path = Arc::new(path.to_string());
@@ -316,9 +348,8 @@ async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) 
             .args(["-v", "error"])
             // .args(["-hwaccel", "cuda"])
             // .args(["-hwaccel_output_format", "cuda"])
-            .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
-            .args(["-t", &duration.to_string()])
+            .args(["-map", format!("0:s:{}", id).as_str()])
             .args(["-c:s", "webvtt"])
             .args(["-f", "webvtt"])
             .args(["pipe:1"])
@@ -327,7 +358,7 @@ async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) 
             .expect("Failed to start FFmpeg");
 
         if let Some(mut stdout) = ffmpeg.stdout.take() {
-            let mut read_buf = vec![0; 1024 * 1024];
+            let mut read_buf = vec![0; 1024 * 1024 * 2];
             loop {
                 match stdout.read(&mut read_buf).await {
                     Ok(0) => {
@@ -346,6 +377,50 @@ async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) 
     });
     handle.await.unwrap();
     let buffer_reader = buffer.lock().await;
-    let data = buffer_reader.clone();
-    SubtitleData { id, data }
+    buffer_reader.clone()
 }
+
+// async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) -> SubtitleData {
+//     let buffer = Arc::new(Mutex::new(Vec::new()));
+//     let buffer_clone = buffer.clone();
+//     let path = Arc::new(path.to_string());
+//
+//     // Spawn FFmpeg transcoding process
+//     let handle = tokio::spawn(async move {
+//         let mut ffmpeg = Command::new("ffmpeg-next")
+//             .args(["-v", "error"])
+//             // .args(["-hwaccel", "cuda"])
+//             // .args(["-hwaccel_output_format", "cuda"])
+//             .args(["-ss", &start_timestamp.to_string()])
+//             .args(["-i", &path])
+//             .args(["-t", &duration.to_string()])
+//             .args(["-c:s", "webvtt"])
+//             .args(["-f", "webvtt"])
+//             .args(["pipe:1"])
+//             .stdout(Stdio::piped())
+//             .spawn()
+//             .expect("Failed to start FFmpeg");
+//
+//         if let Some(mut stdout) = ffmpeg.stdout.take() {
+//             let mut read_buf = vec![0; 1024 * 1024];
+//             loop {
+//                 match stdout.read(&mut read_buf).await {
+//                     Ok(0) => {
+//                         break;
+//                     }
+//                     Ok(bytes_read) => {
+//                         let mut buffer_writer = buffer_clone.lock().await;
+//                         buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
+//                     }
+//                     Err(e) => {
+//                         eprintln!("Failed to read FFmpeg stdout: {}", e);
+//                     }
+//                 }
+//             }
+//         }
+//     });
+//     handle.await.unwrap();
+//     let buffer_reader = buffer.lock().await;
+//     let data = buffer_reader.clone();
+//     SubtitleData { id, data }
+// }
