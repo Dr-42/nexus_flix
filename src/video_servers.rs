@@ -1,19 +1,16 @@
 use axum::{
     body::Body,
     extract::Query,
+    http::status::StatusCode,
     response::{IntoResponse, Response},
 };
 use hyper::header::{self};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     process::Stdio,
     sync::{Arc, Mutex},
 };
-use tokio::{
-    io::AsyncReadExt,
-    process::Command,
-    sync::watch::{self, Receiver, Sender},
-};
+use tokio::{io::AsyncReadExt, process::Command};
 
 mod video_helpers;
 
@@ -28,44 +25,56 @@ pub struct VideoMetadataRequest {
     pub path: String,
 }
 
+#[derive(Serialize)]
+pub struct AudioData {
+    pub id: u64,
+    pub data: Vec<u8>,
+}
+
+#[derive(Serialize)]
+pub struct SubtitleData {
+    pub id: u64,
+    pub data: Vec<u8>,
+}
+
+#[derive(Serialize)]
+pub struct VideoResponse {
+    pub video_data: Vec<u8>,
+    pub audio_data: Vec<AudioData>,
+    pub subtitle_data: Vec<SubtitleData>,
+}
+
 pub async fn serve_video_metadata(Query(params): Query<VideoMetadataRequest>) -> impl IntoResponse {
     let input_path = params.path;
     let video_metadata = video_helpers::get_video_metadata(&input_path).await;
     match video_metadata {
         Err(e) => Response::builder()
-            .status(404)
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header(header::CONTENT_TYPE, "text/plain")
             .body(Body::new(format!("Video metadata error: {}", e)))
             .unwrap(),
         Ok(data) => Response::builder()
-            .status(200)
+            .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::new(serde_json::to_string(&data).unwrap()))
             .unwrap(),
     }
 }
 
-// Serve video with timestamp-based range support
 pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> impl IntoResponse {
     let input_path = params.path;
-
     println!("Input path: {}", input_path);
 
     // Get timestamp from the query parameters or default to 0
     let start_timestamp = params.timestamp.unwrap_or(0.0);
 
     println!("Start timestamp: {}", start_timestamp);
-
     // Create buffer for transcoded data
     let buffer = Arc::new(Mutex::new(Vec::new()));
     let buffer_clone = buffer.clone();
-
-    println!("Start timestamp: {}s", start_timestamp);
-
     let chunk_duration = 10.0;
 
     // Spawn FFmpeg transcoding process
-    let (tx, _rx): (Sender<()>, Receiver<()>) = watch::channel(());
     let handle = tokio::spawn(async move {
         let mut ffmpeg = Command::new("ffmpeg-next")
             //.args(["-v", "quiet"])
@@ -94,17 +103,14 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
 
         if let Some(mut stdout) = ffmpeg.stdout.take() {
             let mut read_buf = vec![0; 1024 * 1024 * 12];
-            let mut total_bytes = 0;
             loop {
                 match stdout.read(&mut read_buf).await {
                     Ok(0) => {
-                        println!("Bytes read: {}", total_bytes);
                         break;
                     }
                     Ok(bytes_read) => {
                         let mut buffer_writer = buffer_clone.lock().unwrap();
                         buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
-                        total_bytes += bytes_read;
                     }
                     Err(e) => {
                         eprintln!("Failed to read FFmpeg stdout: {}", e);
@@ -112,13 +118,9 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
                 }
             }
         }
-
-        tx.send(()).unwrap();
     });
     println!("Transcoding started");
-
     handle.await.unwrap();
-
     println!("Transcoding finished");
     // Stream buffered content to the client
     let buffer_reader = buffer.lock().unwrap();
@@ -126,7 +128,10 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
     println!("Transcoded size: {}", transcoded_size);
     let body = Body::from(buffer_reader.clone()); // Clone to allow simultaneous use
 
-    let mut res = Response::builder().status(206).body(body).unwrap();
+    let mut res = Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .body(body)
+        .unwrap();
 
     let response_headers = res.headers_mut();
     response_headers.insert(header::CONTENT_TYPE, "video/mp4".parse().unwrap());
