@@ -4,8 +4,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use hyper::header::{self};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Deserialize;
 use std::{
     process::Stdio,
     sync::{Arc, Mutex},
@@ -15,6 +14,8 @@ use tokio::{
     process::Command,
     sync::watch::{self, Receiver, Sender},
 };
+
+mod video_helpers;
 
 #[derive(Deserialize)]
 pub struct VideoRequest {
@@ -27,31 +28,9 @@ pub struct VideoDurationRequest {
     pub path: String,
 }
 
-#[derive(Serialize, Debug)]
-pub enum Tracktype {
-    Audio,
-    Video,
-    Subtitle,
-}
-
-#[derive(Serialize, Debug)]
-pub struct Track {
-    pub id: String,
-    pub kind: Tracktype,
-    pub label: String,
-    pub codec: String,
-    pub color_format: Option<String>,
-}
-
-#[derive(Serialize, Debug)]
-pub struct VideoMetadata {
-    pub duration: f64,
-    pub tracks: Vec<Track>,
-}
-
 pub async fn serve_video_data(Query(params): Query<VideoDurationRequest>) -> impl IntoResponse {
     let input_path = params.path;
-    let video_metadata = get_video_metadata(&input_path).await;
+    let video_metadata = video_helpers::get_video_metadata(&input_path).await;
 
     println!("Video duration: {:#?}", video_metadata);
 
@@ -65,7 +44,7 @@ pub async fn serve_video_data(Query(params): Query<VideoDurationRequest>) -> imp
     let video_metadata = video_metadata.unwrap();
     Response::builder()
         .status(200)
-        .header(header::CONTENT_TYPE, "text/plain")
+        .header(header::CONTENT_TYPE, "application/json")
         .body(Body::new(serde_json::to_string(&video_metadata).unwrap()))
         .unwrap()
 }
@@ -161,80 +140,4 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
     );
 
     res
-}
-
-async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, String> {
-    println!("Input path: {}", input_path);
-    let output = Command::new("ffprobe")
-        .args(["-v", "quiet"])
-        .args(["-print_format", "json"])
-        .args(["-show_streams"])
-        .args([input_path])
-        .output()
-        .await
-        .map_err(|_| "Failed to execute ffprobe")
-        .unwrap();
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    //println!("Stdout: {}", stdout);
-    let metadata: Value = serde_json::from_str(&stdout).unwrap();
-    let mut tracks: Vec<Track> = Vec::new();
-
-    let metadata = metadata["streams"].as_array().unwrap();
-
-    for stream in metadata {
-        if let Some(track_type) = stream.get("codec_type") {
-            let track_type = match track_type.as_str().unwrap() {
-                "audio" => Tracktype::Audio,
-                "video" => Tracktype::Video,
-                "subtitle" => Tracktype::Subtitle,
-                _ => continue,
-            };
-            let track_id = stream["index"].as_u64().unwrap();
-            let tags = stream["tags"].as_object();
-            let label = if let Some(tags) = tags {
-                if let Some(label) = tags.get("language") {
-                    label.as_str().unwrap().to_string()
-                } else if let Some(label) = tags.get("title") {
-                    label.as_str().unwrap().to_string()
-                } else {
-                    format!("Track {}", track_id)
-                }
-            } else {
-                format!("Track {}", track_id)
-            };
-            let color_format = stream
-                .get("pix_fmt")
-                .map(|color_format| color_format.as_str().unwrap().to_string());
-            let codec = stream["codec_name"].as_str().unwrap();
-            let track = Track {
-                id: track_id.to_string(),
-                kind: track_type,
-                label,
-                codec: codec.to_string(),
-                color_format,
-            };
-            tracks.push(track);
-        }
-    }
-    let output = Command::new("ffprobe")
-        .args(["-select_streams", "v:0"])
-        .args(["-show_entries", "format=duration"])
-        .args(["-of", "default=noprint_wrappers=1:nokey=1"])
-        .args([input_path])
-        .output()
-        .await
-        .map_err(|_| "Failed to execute ffprobe")
-        .unwrap();
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    println!("Output: {}", output_str);
-    let mut lines = output_str.lines();
-    let duration = lines
-        .next()
-        .and_then(|s| s.trim().parse::<f64>().ok())
-        .unwrap();
-
-    let metadata = VideoMetadata { tracks, duration };
-    Ok(metadata)
 }

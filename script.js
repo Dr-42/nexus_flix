@@ -110,7 +110,7 @@ class VideoPlayer {
 		this.videoDuration = videoMetadata.duration;
 		this.mediaSource.duration = this.videoDuration;
 
-		console.log(`Video duration: ${this.videoDuration}`);
+		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
 	}
 
 	async fetchVideoChunk(startTime) {
