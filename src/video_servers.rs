@@ -105,7 +105,7 @@ pub async fn serve_video_with_timestamp(Query(params): Query<VideoRequest>) -> i
             .args(["-preset", "p5"])
             .args(["-b:v", "2M"])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
-            .args(["-c:a", "libopus"])
+            .args(["-c:a", "libfdk_aac"])
             .args(["-b:a", "128k"])
             .args([
                 "-movflags",

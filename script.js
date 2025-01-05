@@ -168,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
 		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
-		'video/mp4; codecs="avc1.42E01E, opus"'
+		'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
 	);
 	videoPlayer.initializeMediaSource();
 	videoPlayer.addEventListeners();
