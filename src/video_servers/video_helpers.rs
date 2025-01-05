@@ -286,35 +286,13 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
 #[derive(Serialize)]
 pub struct SubtitleData {
     pub id: u64,
-    pub data: Vec<u8>,
+    pub data: String,
 }
 
 #[derive(Serialize)]
 pub struct VideoSubs {
     pub num_subs: u32,
     pub subs: Vec<SubtitleData>,
-}
-
-// NOTE: Video subs binary representation
-// [
-//     u32 -> number of subtitle tracks,
-//     -- For each subtitle track --
-//     u64 -> subtitle track id,
-//     u64 ->  data length of subtitle track
-//     Vec<u8> -> subtitle track data,
-//     ---
-// ]
-impl VideoSubs {
-    pub async fn as_bytes(&self) -> Vec<u8> {
-        let mut data = Vec::new();
-        data.write_u32_le(self.num_subs).await.unwrap();
-        for sub in &self.subs {
-            data.write_u64_le(sub.id).await.unwrap();
-            data.write_u64_le(sub.data.len() as u64).await.unwrap();
-            data.write_all(&sub.data).await.unwrap();
-        }
-        data
-    }
 }
 
 pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
@@ -337,7 +315,7 @@ pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
     Ok(VideoSubs { num_subs, subs })
 }
 
-async fn get_subtitle(path: &str, id: u64) -> Vec<u8> {
+async fn get_subtitle(path: &str, id: u64) -> String {
     let buffer = Arc::new(Mutex::new(Vec::new()));
     let buffer_clone = buffer.clone();
     let path = Arc::new(path.to_string());
@@ -377,50 +355,7 @@ async fn get_subtitle(path: &str, id: u64) -> Vec<u8> {
     });
     handle.await.unwrap();
     let buffer_reader = buffer.lock().await;
-    buffer_reader.clone()
-}
+    let binary = buffer_reader.clone();
 
-// async fn get_subtitle(path: &str, id: u64, start_timestamp: f64, duration: f64) -> SubtitleData {
-//     let buffer = Arc::new(Mutex::new(Vec::new()));
-//     let buffer_clone = buffer.clone();
-//     let path = Arc::new(path.to_string());
-//
-//     // Spawn FFmpeg transcoding process
-//     let handle = tokio::spawn(async move {
-//         let mut ffmpeg = Command::new("ffmpeg-next")
-//             .args(["-v", "error"])
-//             // .args(["-hwaccel", "cuda"])
-//             // .args(["-hwaccel_output_format", "cuda"])
-//             .args(["-ss", &start_timestamp.to_string()])
-//             .args(["-i", &path])
-//             .args(["-t", &duration.to_string()])
-//             .args(["-c:s", "webvtt"])
-//             .args(["-f", "webvtt"])
-//             .args(["pipe:1"])
-//             .stdout(Stdio::piped())
-//             .spawn()
-//             .expect("Failed to start FFmpeg");
-//
-//         if let Some(mut stdout) = ffmpeg.stdout.take() {
-//             let mut read_buf = vec![0; 1024 * 1024];
-//             loop {
-//                 match stdout.read(&mut read_buf).await {
-//                     Ok(0) => {
-//                         break;
-//                     }
-//                     Ok(bytes_read) => {
-//                         let mut buffer_writer = buffer_clone.lock().await;
-//                         buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
-//                     }
-//                     Err(e) => {
-//                         eprintln!("Failed to read FFmpeg stdout: {}", e);
-//                     }
-//                 }
-//             }
-//         }
-//     });
-//     handle.await.unwrap();
-//     let buffer_reader = buffer.lock().await;
-//     let data = buffer_reader.clone();
-//     SubtitleData { id, data }
-// }
+    String::from_utf8_lossy(&binary).to_string()
+}

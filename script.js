@@ -26,11 +26,11 @@ class VideoMetadata {
 	}
 
 	getAudioTracks() {
-		return this.tracks.filter((track) => track.kind === 'audio');
+		return this.tracks.filter((track) => track.kind === 'Audio');
 	}
 
 	getSubtitleTracks() {
-		return this.tracks.filter((track) => track.kind === 'subtitle');
+		return this.tracks.filter((track) => track.kind === 'Subtitle');
 	}
 }
 
@@ -59,13 +59,10 @@ class VideoPlayer {
 		this.mediaSource = new MediaSource();
 		this.videoElement.src = URL.createObjectURL(this.mediaSource);
 		this.mediaSource.addEventListener('sourceopen', async () => {
-			try {
-				await this.loadInitialMetadata();
-				await this.initializeSourceBuffer();
-				await this.fetchVideoChunk(0.0);
-			} catch (error) {
-				console.error('Error initializing MediaSource:', error.message);
-			}
+			await this.loadInitialMetadata();
+			await this.initializeSourceBuffer();
+			await this.fetchVideoChunk(0.0);
+			await this.fetchSubtitles();
 		});
 	}
 
@@ -115,8 +112,8 @@ class VideoPlayer {
 		})
 		this.audioSourceBuffer = audioSourceBuffer;
 
-		let subtitleTracks = this.videoMetadata.getSubtitleTracks();
-		console.log(subtitleTracks);
+		// let subtitleTracks = this.videoMetadata.getSubtitleTracks();
+		// console.log(subtitleTracks);
 	}
 
 	async loadInitialMetadata() {
@@ -130,6 +127,27 @@ class VideoPlayer {
 		this.mediaSource.duration = this.videoMetadata.duration;
 
 		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
+	}
+
+	async fetchSubtitles() {
+		const response = await fetch(`/video-subs?path=${this.videoPath}`);
+		if (!response.ok) throw new Error('Failed to fetch subtitles');
+
+		const responseJson = await response.json();
+		const subtitleData = SubtitleResponseParser.fromJson(responseJson);
+
+		// Add track fields and subtitle data
+		const subtitleTracks = this.videoMetadata.getSubtitleTracks();
+		for (let i = 0; i < subtitleData.numSubtitles; i++) {
+			const subtitleTrack = subtitleTracks[i];
+			let trackElement = document.createElement('track');
+			trackElement.kind = 'subtitles';
+			trackElement.label = subtitleTrack.label;
+			trackElement.srclang = subtitleTrack.language;
+			trackElement.src = URL.createObjectURL(new Blob([subtitleData.subtitles[i].data], { type: 'text/vtt' }));
+			if (i == 0) trackElement.default = true;
+			this.videoElement.appendChild(trackElement);
+		}
 	}
 
 	async fetchVideoChunk(startTime) {
@@ -282,80 +300,31 @@ class VideoResponseParser {
 	}
 }
 
+class SubtitleData {
+	constructor(id, data) {
+		this.id = id;
+		this.data = data;
+	}
+
+	static fromJson(json) {
+		return new SubtitleData(json.id, json.data);
+	}
+
+	static fromJsonArray(jsonArray) {
+		return jsonArray.map((json) => SubtitleData.fromJson(json));
+	}
+}
+
 class SubtitleResponseParser {
-	constructor(arrayBuffer) {
-		this.arrayBuffer = arrayBuffer;
-		this.dataView = new DataView(arrayBuffer);
-		this.offset = 0;
-
-		// Parsed fields
-		this.numSubtitles = 0;
-		this.subtitles = [];
+	constructor(numSubtitles, subtitles) {
+		this.numSubtitles = numSubtitles;
+		this.subtitles = subtitles;
 	}
 
-	// Helper method to read a Uint32
-	readUint32() {
-		const value = this.dataView.getUint32(this.offset, true);
-		this.offset += 4;
-		return value;
+	static fromJson(json) {
+		return new SubtitleResponseParser(json.num_subs, SubtitleData.fromJsonArray(json.subs));
 	}
 
-	// Helper method to read a BigUint64 safely
-	readBigUint64() {
-		if (this.offset + 8 > this.dataView.byteLength) {
-			throw new Error(`Cannot read BigUint64, insufficient data at offset ${this.offset}`);
-		}
-		const value = this.dataView.getBigUint64(this.offset, true);
-		this.offset += 8;
-		return value;
-	}
-
-	// Helper method to read a chunk of data safely
-	readBytes(length) {
-		if (this.offset + length > this.dataView.byteLength) {
-			throw new Error(
-				`Cannot read ${length} bytes, only ${this.dataView.byteLength - this.offset} remaining`
-			);
-		}
-		const value = new Uint8Array(this.arrayBuffer, this.offset, length);
-		this.offset += length;
-		return value;
-	}
-
-	// Main method to parse the binary data
-	parse() {
-		try {
-			// Read and validate the number of subtitles
-			this.numSubtitles = this.readUint32();
-			if (this.numSubtitles < 0 || this.numSubtitles > 100) {
-				throw new Error(`Invalid number of subtitles: ${this.numSubtitles}`);
-			}
-			console.log(`Number of subtitles: ${this.numSubtitles}`);
-
-			// Read and store subtitles
-			for (let i = 0; i < this.numSubtitles; i++) {
-				const trackId = this.readBigUint64();
-				const trackLength = Number(this.readBigUint64());
-
-				if (trackLength <= 0 || trackLength > this.dataView.byteLength) {
-					throw new Error(`Invalid subtitle track length: ${trackLength}`);
-				}
-				const trackData = this.readBytes(trackLength);
-
-				console.log(`Subtitle track ID: ${trackId}, length: ${trackLength}`);
-				this.subtitles.push({ id: trackId, data: trackData });
-			}
-
-			// Return parsed data
-			return {
-				numSubtitles: this.numSubtitles,
-				subtitles: this.subtitles,
-			};
-		} catch (error) {
-			console.error('Error parsing subtitle data:', error.message);
-			throw error;
-		}
-	}
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

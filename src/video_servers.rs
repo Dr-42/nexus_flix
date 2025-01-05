@@ -64,7 +64,8 @@ pub async fn serve_video_subs(Query(params): Query<VideoRequest>) -> impl IntoRe
     match video_subs {
         Ok(data) => Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
-            .body(Body::from(data.as_bytes().await))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_string(&data).unwrap()))
             .unwrap(),
         Err(e) => {
             println!("Video subs error: {}", e);
