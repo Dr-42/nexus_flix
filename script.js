@@ -24,15 +24,25 @@ class VideoMetadata {
 		const tracks = Track.fromJsonArray(json.tracks);
 		return new VideoMetadata(json.duration, tracks);
 	}
+
+	getAudioTracks() {
+		return this.tracks.filter((track) => track.kind === 'audio');
+	}
+
+	getSubtitleTracks() {
+		return this.tracks.filter((track) => track.kind === 'subtitle');
+	}
 }
 
 class VideoPlayer {
-	constructor(videoElementId, videoPath, mimeType) {
+	constructor(videoElementId, videoPath) {
 		this.videoElement = document.getElementById(videoElementId);
 		this.videoPath = encodeURI(videoPath);
-		this.mimeType = mimeType;
+		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
+		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
 		this.mediaSource = null;
-		this.sourceBuffer = null;
+		this.videoSourceBuffer = null;
+		this.audioSourceBuffer = null;
 		this.isFetching = false;
 		this.isSeeking = false;
 		this.videoMetadata = null;
@@ -45,14 +55,13 @@ class VideoPlayer {
 		}
 	}
 
-	initializeMediaSource() {
+	async initializeMediaSource() {
 		this.mediaSource = new MediaSource();
 		this.videoElement.src = URL.createObjectURL(this.mediaSource);
-
 		this.mediaSource.addEventListener('sourceopen', async () => {
 			try {
-				await this.initializeSourceBuffer();
 				await this.loadInitialMetadata();
+				await this.initializeSourceBuffer();
 				await this.fetchVideoChunk(0.0);
 			} catch (error) {
 				console.error('Error initializing MediaSource:', error.message);
@@ -63,7 +72,7 @@ class VideoPlayer {
 	addEventListeners() {
 		this.videoElement.addEventListener('seeking', async () => {
 			this.isSeeking = true;
-			if (this.sourceBuffer && !this.sourceBuffer.updating && !this.isFetching) {
+			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating && !this.isFetching) {
 				const currentTime = this.videoElement.currentTime;
 				const newTime = await this.reloadVideoChunk(currentTime, false);
 				console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
@@ -75,7 +84,7 @@ class VideoPlayer {
 		});
 
 		this.videoElement.addEventListener('timeupdate', async () => {
-			if (!this.sourceBuffer || this.sourceBuffer.updating || this.isFetching) return;
+			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) return;
 
 			const currentTime = this.videoElement.currentTime;
 			const bufferEnd = this.getRelevantBufferEnd();
@@ -92,12 +101,22 @@ class VideoPlayer {
 	}
 
 	async initializeSourceBuffer() {
-		this.sourceBuffer = this.mediaSource.addSourceBuffer(this.mimeType);
-		this.sourceBuffer.mode = 'segments';
-
-		this.sourceBuffer.addEventListener('error', (e) => {
+		this.videoSourceBuffer = this.mediaSource.addSourceBuffer(this.videoMimeType);
+		this.videoSourceBuffer.mode = 'segments';
+		this.videoSourceBuffer.addEventListener('error', (e) => {
 			console.error('SourceBuffer error:', e);
 		});
+
+		let audioTracks = this.videoMetadata.getAudioTracks();
+		const audioSourceBuffer = this.mediaSource.addSourceBuffer(this.audioMimeType);
+		audioSourceBuffer.mode = 'segments';
+		audioSourceBuffer.addEventListener('error', (e) => {
+			console.error('Audio SourceBuffer error:', e);
+		})
+		this.audioSourceBuffer = audioSourceBuffer;
+
+		let subtitleTracks = this.videoMetadata.getSubtitleTracks();
+		console.log(subtitleTracks);
 	}
 
 	async loadInitialMetadata() {
@@ -114,7 +133,7 @@ class VideoPlayer {
 	}
 
 	async fetchVideoChunk(startTime) {
-		if (this.isFetching || !this.sourceBuffer || this.sourceBuffer.updating) return;
+		if (this.isFetching || !this.videoSourceBuffer || this.videoSourceBuffer.updating) return;
 
 		this.isFetching = true;
 
@@ -131,11 +150,23 @@ class VideoPlayer {
 			const parsedData = parser.parse();
 
 			// Append the video data to the source buffer
-			if (this.sourceBuffer && !this.sourceBuffer.updating) {
-				this.sourceBuffer.appendBuffer(parsedData.videoData);
+			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating) {
+				this.videoSourceBuffer.appendBuffer(parsedData.videoData);
 			}
 
-			console.log('Parsed data:', parsedData);
+			// Append audio data to the audio source buffers
+			const audioSourceBuffer = this.audioSourceBuffer;
+			if (audioSourceBuffer && !audioSourceBuffer.updating) {
+				audioSourceBuffer.appendBuffer(parsedData.audioTracks[0].data);
+			}
+
+			// Append subtitle data to the subtitle source buffers
+			// for (let i = 0; i < parsedData.subtitleTracks.length; i++) {
+			// 	const subtitleSourceBuffer = this.subtitleSourceBuffers[i];
+			// 	if (subtitleSourceBuffer && !subtitleSourceBuffer.updating) {
+			// 		subtitleSourceBuffer.appendBuffer(parsedData.subtitleTracks[i].data);
+			// 	}
+			// }
 		} catch (error) {
 			console.error('Error fetching video chunk:', error);
 		} finally {
@@ -145,11 +176,12 @@ class VideoPlayer {
 
 	async reloadVideoChunk(currentTime, ceil) {
 		try {
-			this.sourceBuffer.abort();
+			this.videoSourceBuffer.abort();
+			this.audioSourceBuffer.abort();
 
 			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
-			this.sourceBuffer.timestampOffset = newTime;
-
+			this.videoSourceBuffer.timestampOffset = newTime;
+			this.audioSourceBuffer.timestampOffset = newTime;
 			await this.fetchVideoChunk(newTime);
 			return newTime;
 		} catch (error) {
@@ -160,9 +192,9 @@ class VideoPlayer {
 	getRelevantBufferEnd() {
 		let bufferEnd = 0;
 
-		for (let i = 0; i < this.sourceBuffer.buffered.length; i++) {
-			const start = this.sourceBuffer.buffered.start(i);
-			const end = this.sourceBuffer.buffered.end(i);
+		for (let i = 0; i < this.videoSourceBuffer.buffered.length; i++) {
+			const start = this.videoSourceBuffer.buffered.start(i);
+			const end = this.videoSourceBuffer.buffered.end(i);
 
 			if (start <= this.videoElement.currentTime && end > bufferEnd) {
 				bufferEnd = end;
@@ -284,14 +316,13 @@ class VideoResponseParser {
 	}
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
 		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
-		'video/mp4; codecs="avc1.640029"'
 	);
-	videoPlayer.initializeMediaSource();
+	await videoPlayer.initializeMediaSource();
 	videoPlayer.addEventListeners();
-	videoPlayer.loadInitialMetadata();
-	videoPlayer.fetchVideoChunk(0.0);
+	await videoPlayer.loadInitialMetadata();
+	await videoPlayer.fetchVideoChunk(0.0);
 });

@@ -68,7 +68,6 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
             } as u64;
             let tags = stream["tags"].as_object();
             let label = if let Some(tags) = tags {
-                println!("Tags: {:#?}", tags);
                 if let Some(label) = tags.get("title") {
                     label.as_str().unwrap().to_string()
                 } else if let Some(label) = tags.get("language") {
@@ -190,13 +189,13 @@ pub async fn get_video_data(path: &str, start_timestamp: f64) -> Result<VideoRes
             }
             Tracktype::Audio => {
                 let audio_stream = get_audio(path, track.id, start_timestamp, duration).await;
+                println!("Audio data: {}", audio_stream.data.len());
                 video_data.audio_data.push(audio_stream);
-                println!("Audio data: {}", video_data.audio_data.len());
             }
             Tracktype::Subtitle => {
                 let subtitle_stream = get_subtitle(path, track.id, start_timestamp, duration).await;
+                println!("Subtitle data: {}", subtitle_stream.data.len());
                 video_data.subtitle_data.push(subtitle_stream);
-                println!("Subtitle data: {}", video_data.subtitle_data.len());
             }
         }
     }
@@ -270,8 +269,13 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
             .args(["-c:a", "libfdk_aac"])
+            .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
+            .args([
+                "-movflags",
+                "frag_keyframe+empty_moov+faststart+default_base_moof",
+            ])
             .args(["-vn"])
-            .args(["-f", "adts"])
+            .args(["-f", "mp4"])
             .args(["pipe:1"])
             .stdout(Stdio::piped())
             .spawn()
