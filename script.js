@@ -35,7 +35,7 @@ class VideoPlayer {
 		this.sourceBuffer = null;
 		this.isFetching = false;
 		this.isSeeking = false;
-		this.videoDuration = 0;
+		this.videoMetadata = null;
 
 		if ('MediaSource' in window) {
 			this.initializeMediaSource();
@@ -107,8 +107,8 @@ class VideoPlayer {
 		const data = await response.json();
 		const videoMetadata = VideoMetadata.fromJson(data);
 
-		this.videoDuration = videoMetadata.duration;
-		this.mediaSource.duration = this.videoDuration;
+		this.videoMetadata = videoMetadata;
+		this.mediaSource.duration = this.videoMetadata.duration;
 
 		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
 	}
@@ -117,18 +117,27 @@ class VideoPlayer {
 		if (this.isFetching || !this.sourceBuffer || this.sourceBuffer.updating) return;
 
 		this.isFetching = true;
+
 		try {
-			console.log(`Fetching video chunk for time: ${startTime}`);
-
 			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}`);
-			if (!response.ok) throw new Error('Failed to fetch video chunk');
+			if (!response.ok) {
+				throw new Error('Failed to fetch video chunk');
+			}
 
-			const data = await response.arrayBuffer();
-			this.sourceBuffer.appendBuffer(data);
+			const arrayBuffer = await response.arrayBuffer();
 
-			console.log(`Fetched and appended video chunk for time: ${startTime}`);
+			// Parse the binary data using the VideoResponseParser class
+			const parser = new VideoResponseParser(arrayBuffer);
+			const parsedData = parser.parse();
+
+			// Append the video data to the source buffer
+			if (this.sourceBuffer && !this.sourceBuffer.updating) {
+				this.sourceBuffer.appendBuffer(parsedData.videoData);
+			}
+
+			console.log('Parsed data:', parsedData);
 		} catch (error) {
-			console.error('Error fetching video chunk:', error.message);
+			console.error('Error fetching video chunk:', error);
 		} finally {
 			this.isFetching = false;
 		}
@@ -164,11 +173,122 @@ class VideoPlayer {
 	}
 }
 
+class VideoResponseParser {
+	constructor(arrayBuffer) {
+		this.arrayBuffer = arrayBuffer;
+		this.dataView = new DataView(arrayBuffer);
+		this.offset = 0;
+
+		// Parsed fields
+		this.numAudioTracks = 0;
+		this.numSubtitleTracks = 0;
+		this.videoData = null;
+		this.audioTracks = [];
+		this.subtitleTracks = [];
+	}
+
+	// Helper method to read a Uint32
+	readUint32() {
+		const value = this.dataView.getUint32(this.offset, true);
+		this.offset += 4;
+		return value;
+	}
+
+	// Helper method to read a BigUint64 safely
+	readBigUint64() {
+		if (this.offset + 8 > this.dataView.byteLength) {
+			throw new Error(`Cannot read BigUint64, insufficient data at offset ${this.offset}`);
+		}
+		const value = this.dataView.getBigUint64(this.offset, true);
+		this.offset += 8;
+		return value;
+	}
+
+	// Helper method to read a chunk of data safely
+	readBytes(length) {
+		if (this.offset + length > this.dataView.byteLength) {
+			throw new Error(
+				`Cannot read ${length} bytes, only ${this.dataView.byteLength - this.offset} remaining`
+			);
+		}
+		const value = new Uint8Array(this.arrayBuffer, this.offset, length);
+		this.offset += length;
+		return value;
+	}
+
+	// Main method to parse the binary data
+	parse() {
+		try {
+			// Read and validate the number of audio tracks
+			this.numAudioTracks = this.readUint32();
+			if (this.numAudioTracks < 0 || this.numAudioTracks > 100) {
+				throw new Error(`Invalid number of audio tracks: ${this.numAudioTracks}`);
+			}
+			console.log(`Number of audio tracks: ${this.numAudioTracks}`);
+
+			// Read and validate the number of subtitle tracks
+			this.numSubtitleTracks = this.readUint32();
+			if (this.numSubtitleTracks < 0 || this.numSubtitleTracks > 100) {
+				throw new Error(`Invalid number of subtitle tracks: ${this.numSubtitleTracks}`);
+			}
+			console.log(`Number of subtitle tracks: ${this.numSubtitleTracks}`);
+
+			// Read and validate the video track length
+			const videoTrackLength = Number(this.readBigUint64());
+			if (videoTrackLength <= 0 || videoTrackLength > this.dataView.byteLength) {
+				throw new Error(`Invalid video track length: ${videoTrackLength}`);
+			}
+			console.log(`Video track length: ${videoTrackLength}`);
+			this.videoData = this.readBytes(videoTrackLength);
+
+			// Read and store audio tracks
+			for (let i = 0; i < this.numAudioTracks; i++) {
+				const trackId = this.readBigUint64();
+				const trackLength = Number(this.readBigUint64());
+
+				if (trackLength <= 0 || trackLength > this.dataView.byteLength) {
+					throw new Error(`Invalid audio track length: ${trackLength}`);
+				}
+				const trackData = this.readBytes(trackLength);
+
+				console.log(`Audio track ID: ${trackId}, length: ${trackLength}`);
+				this.audioTracks.push({ id: trackId, data: trackData });
+			}
+
+			// Read and store subtitle tracks
+			for (let i = 0; i < this.numSubtitleTracks; i++) {
+				const trackId = this.readBigUint64();
+				const trackLength = Number(this.readBigUint64());
+
+				if (trackLength <= 0 || trackLength > this.dataView.byteLength) {
+					throw new Error(`Invalid subtitle track length: ${trackLength}`);
+				}
+				const trackData = this.readBytes(trackLength);
+
+				console.log(`Subtitle track ID: ${trackId}, length: ${trackLength}`);
+				this.subtitleTracks.push({ id: trackId, data: trackData });
+			}
+
+			// Return parsed data
+			return {
+				numAudioTracks: this.numAudioTracks,
+				numSubtitleTracks: this.numSubtitleTracks,
+				videoData: this.videoData,
+				audioTracks: this.audioTracks,
+				subtitleTracks: this.subtitleTracks,
+			};
+		} catch (error) {
+			console.error('Error parsing video data:', error.message);
+			throw error;
+		}
+	}
+}
+
 document.addEventListener('DOMContentLoaded', () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
 		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
-		'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'
+		'video/mp4; codecs="avc1.640029"'
 	);
 	videoPlayer.initializeMediaSource();
 	videoPlayer.addEventListeners();
