@@ -34,187 +34,6 @@ class VideoMetadata {
 	}
 }
 
-class VideoPlayer {
-	constructor(videoElementId, videoPath) {
-		this.videoElement = document.getElementById(videoElementId);
-		this.videoPath = encodeURI(videoPath);
-		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
-		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
-		this.mediaSource = null;
-		this.videoSourceBuffer = null;
-		this.audioSourceBuffer = null;
-		this.isFetching = false;
-		this.isSeeking = false;
-		this.videoMetadata = null;
-
-		if ('MediaSource' in window) {
-			this.initializeMediaSource();
-			this.addEventListeners();
-		} else {
-			console.error('MediaSource API is not supported in this browser.');
-		}
-	}
-
-	async initializeMediaSource() {
-		this.mediaSource = new MediaSource();
-		this.videoElement.src = URL.createObjectURL(this.mediaSource);
-		this.mediaSource.addEventListener('sourceopen', async () => {
-			await this.loadInitialMetadata();
-			await this.initializeSourceBuffer();
-			await this.fetchVideoChunk(0.0);
-			await this.fetchSubtitles();
-		});
-	}
-
-	addEventListeners() {
-		this.videoElement.addEventListener('seeking', async () => {
-			this.isSeeking = true;
-			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating && !this.isFetching) {
-				const currentTime = this.videoElement.currentTime;
-				const newTime = await this.reloadVideoChunk(currentTime, false);
-				console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
-			}
-		});
-
-		this.videoElement.addEventListener('seeked', () => {
-			this.isSeeking = false;
-		});
-
-		this.videoElement.addEventListener('timeupdate', async () => {
-			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) return;
-
-			const currentTime = this.videoElement.currentTime;
-			const bufferEnd = this.getRelevantBufferEnd();
-
-			if (currentTime >= bufferEnd - 2) {
-				const newTime = await this.reloadVideoChunk(currentTime, true);
-				if (this.isSeeking) {
-					console.log(`Seeking to time: ${newTime}`);
-					this.isSeeking = false;
-					this.videoElement.currentTime = newTime;
-				}
-			}
-		});
-	}
-
-	async initializeSourceBuffer() {
-		this.videoSourceBuffer = this.mediaSource.addSourceBuffer(this.videoMimeType);
-		this.videoSourceBuffer.mode = 'segments';
-		this.videoSourceBuffer.addEventListener('error', (e) => {
-			console.error('SourceBuffer error:', e);
-		});
-
-		let audioTracks = this.videoMetadata.getAudioTracks();
-		const audioSourceBuffer = this.mediaSource.addSourceBuffer(this.audioMimeType);
-		audioSourceBuffer.mode = 'segments';
-		audioSourceBuffer.addEventListener('error', (e) => {
-			console.error('Audio SourceBuffer error:', e);
-		})
-		this.audioSourceBuffer = audioSourceBuffer;
-
-		// let subtitleTracks = this.videoMetadata.getSubtitleTracks();
-		// console.log(subtitleTracks);
-	}
-
-	async loadInitialMetadata() {
-		const response = await fetch(`/video-data?path=${this.videoPath}`);
-		if (!response.ok) throw new Error('Failed to fetch video duration');
-
-		const data = await response.json();
-		const videoMetadata = VideoMetadata.fromJson(data);
-
-		this.videoMetadata = videoMetadata;
-		this.mediaSource.duration = this.videoMetadata.duration;
-
-		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
-	}
-
-	async fetchSubtitles() {
-		const response = await fetch(`/video-subs?path=${this.videoPath}`);
-		if (!response.ok) throw new Error('Failed to fetch subtitles');
-
-		const responseJson = await response.json();
-		const subtitleData = SubtitleResponseParser.fromJson(responseJson);
-
-		// Add track fields and subtitle data
-		const subtitleTracks = this.videoMetadata.getSubtitleTracks();
-		for (let i = 0; i < subtitleData.numSubtitles; i++) {
-			const subtitleTrack = subtitleTracks[i];
-			let trackElement = document.createElement('track');
-			trackElement.kind = 'subtitles';
-			trackElement.label = subtitleTrack.label;
-			trackElement.srclang = subtitleTrack.language;
-			trackElement.src = URL.createObjectURL(new Blob([subtitleData.subtitles[i].data], { type: 'text/vtt' }));
-			if (i == 0) trackElement.default = true;
-			this.videoElement.appendChild(trackElement);
-		}
-	}
-
-	async fetchVideoChunk(startTime) {
-		if (this.isFetching || !this.videoSourceBuffer || this.videoSourceBuffer.updating) return;
-
-		this.isFetching = true;
-
-		try {
-			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}`);
-			if (!response.ok) {
-				throw new Error('Failed to fetch video chunk');
-			}
-
-			const arrayBuffer = await response.arrayBuffer();
-
-			// Parse the binary data using the VideoResponseParser class
-			const parser = new VideoResponseParser(arrayBuffer);
-			const parsedData = parser.parse();
-
-			// Append the video data to the source buffer
-			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating) {
-				this.videoSourceBuffer.appendBuffer(parsedData.videoData);
-			}
-
-			// Append audio data to the audio source buffers
-			const audioSourceBuffer = this.audioSourceBuffer;
-			if (audioSourceBuffer && !audioSourceBuffer.updating) {
-				audioSourceBuffer.appendBuffer(parsedData.audioTracks[1].data);
-			}
-		} catch (error) {
-			console.error('Error fetching video chunk:', error);
-		} finally {
-			this.isFetching = false;
-		}
-	}
-
-	async reloadVideoChunk(currentTime, ceil) {
-		try {
-			this.videoSourceBuffer.abort();
-			this.audioSourceBuffer.abort();
-
-			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
-			this.videoSourceBuffer.timestampOffset = newTime;
-			this.audioSourceBuffer.timestampOffset = newTime;
-			await this.fetchVideoChunk(newTime);
-			return newTime;
-		} catch (error) {
-			console.error('Error during reload:', error.message);
-		}
-	}
-
-	getRelevantBufferEnd() {
-		let bufferEnd = 0;
-
-		for (let i = 0; i < this.videoSourceBuffer.buffered.length; i++) {
-			const start = this.videoSourceBuffer.buffered.start(i);
-			const end = this.videoSourceBuffer.buffered.end(i);
-
-			if (start <= this.videoElement.currentTime && end > bufferEnd) {
-				bufferEnd = end;
-			}
-		}
-
-		return bufferEnd;
-	}
-}
-
 class VideoResponseParser {
 	constructor(arrayBuffer) {
 		this.arrayBuffer = arrayBuffer;
@@ -325,6 +144,240 @@ class SubtitleResponseParser {
 		return new SubtitleResponseParser(json.num_subs, SubtitleData.fromJsonArray(json.subs));
 	}
 
+}
+
+class VideoPlayer {
+	constructor(videoElementId, videoPath) {
+		this.videoElementId = videoElementId;
+		this.videoElement = document.getElementById(videoElementId);
+		this.videoPath = encodeURI(videoPath);
+		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
+		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
+		this.mediaSource = null;
+		this.videoSourceBuffer = null;
+		this.audioSourceBuffer = null;
+		this.isFetching = false;
+		this.isSeeking = false;
+		this.videoMetadata = null;
+		this.player = null;
+		this.audioIdx = 0;
+
+		if ('MediaSource' in window) {
+			this.initializeMediaSource();
+			this.addEventListeners();
+		} else {
+			console.error('MediaSource API is not supported in this browser.');
+		}
+	}
+
+	initVideoJs() {
+		this.player = videojs(this.videoElementId, {
+			controls: true,
+			autoplay: true,
+			enableSmoothSeeking: true,
+			fluid: true,
+			nativeControlsForTouch: true,
+			playbackRates: [0.5, 1, 1.5, 2],
+			controlBar: {
+				skipButtons: {
+					forward: 5,
+					backward: 5
+				},
+				// Switch between subtitle tracks
+				subtitles: {
+					default: 0
+				},
+				// Switch between audio tracks
+				audioTracks: {
+					default: 0
+				}
+			},
+		});
+
+		let audioTracks = this.videoMetadata.getAudioTracks();
+		for (let i = 0; i < audioTracks.length; i++) {
+			const audioTrack = audioTracks[i];
+			var vidjsTrack = new videojs.AudioTrack({
+				id: audioTrack.id,
+				kind: 'Audio',
+				label: audioTrack.label,
+				language: audioTrack.language
+			});
+			this.player.audioTracks().addTrack(vidjsTrack);
+		}
+		var audioTrackList = this.player.audioTracks();
+		var self = this;
+		audioTrackList.addEventListener('change', function() {
+			for (var i = 0; i < audioTrackList.length; i++) {
+				var vidjsAudioTrack = audioTrackList[i];
+				if (vidjsAudioTrack.enabled) {
+					console.log(self);
+					self.audioIdx = self.videoMetadata.getAudioTracks()[i].id;
+					self.reloadVideoChunk(self.videoElement.currentTime, true);
+					console.log(`Switched to audio track: ${vidjsAudioTrack.id} Idx: ${self.audioIdx}`);
+					return;
+				}
+			}
+		});
+	}
+
+	async initializeMediaSource() {
+		this.mediaSource = new MediaSource();
+		this.videoElement.src = URL.createObjectURL(this.mediaSource);
+		this.mediaSource.addEventListener('sourceopen', async () => {
+			await this.loadInitialMetadata();
+			await this.fetchSubtitles();
+			this.initVideoJs();
+			await this.initializeSourceBuffer();
+			await this.fetchVideoChunk(0.0);
+		});
+	}
+
+	addEventListeners() {
+		this.videoElement.addEventListener('seeking', async () => {
+			this.isSeeking = true;
+			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating && !this.isFetching) {
+				const currentTime = this.videoElement.currentTime;
+				const newTime = await this.reloadVideoChunk(currentTime, false);
+				console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
+			}
+		});
+
+		this.videoElement.addEventListener('seeked', () => {
+			this.isSeeking = false;
+		});
+
+		this.videoElement.addEventListener('timeupdate', async () => {
+			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) return;
+
+			const currentTime = this.videoElement.currentTime;
+			const bufferEnd = this.getRelevantBufferEnd();
+
+			if (currentTime >= bufferEnd - 2) {
+				const newTime = await this.reloadVideoChunk(currentTime, true);
+				if (this.isSeeking) {
+					console.log(`Seeking to time: ${newTime}`);
+					this.isSeeking = false;
+					this.videoElement.currentTime = newTime;
+				}
+			}
+		});
+	}
+
+	async initializeSourceBuffer() {
+		this.videoSourceBuffer = this.mediaSource.addSourceBuffer(this.videoMimeType);
+		this.videoSourceBuffer.mode = 'segments';
+		this.videoSourceBuffer.addEventListener('error', (e) => {
+			console.error('SourceBuffer error:', e);
+		});
+
+		let audioTracks = this.videoMetadata.getAudioTracks();
+		const audioSourceBuffer = this.mediaSource.addSourceBuffer(this.audioMimeType);
+		audioSourceBuffer.mode = 'segments';
+		audioSourceBuffer.addEventListener('error', (e) => {
+			console.error('Audio SourceBuffer error:', e);
+		})
+		this.audioSourceBuffer = audioSourceBuffer;
+	}
+
+	async loadInitialMetadata() {
+		const response = await fetch(`/video-data?path=${this.videoPath}`);
+		if (!response.ok) throw new Error('Failed to fetch video duration');
+
+		const data = await response.json();
+		const videoMetadata = VideoMetadata.fromJson(data);
+
+		this.videoMetadata = videoMetadata;
+		this.mediaSource.duration = this.videoMetadata.duration;
+
+		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
+	}
+
+	async fetchSubtitles() {
+		const response = await fetch(`/video-subs?path=${this.videoPath}`);
+		if (!response.ok) throw new Error('Failed to fetch subtitles');
+
+		const responseJson = await response.json();
+		const subtitleData = SubtitleResponseParser.fromJson(responseJson);
+
+		// Add track fields and subtitle data
+		const subtitleTracks = this.videoMetadata.getSubtitleTracks();
+		for (let i = 0; i < subtitleData.numSubtitles; i++) {
+			const subtitleTrack = subtitleTracks[i];
+			let trackElement = document.createElement('track');
+			trackElement.kind = 'subtitles';
+			trackElement.label = subtitleTrack.label;
+			trackElement.srclang = subtitleTrack.language;
+			trackElement.src = URL.createObjectURL(new Blob([subtitleData.subtitles[i].data], { type: 'text/vtt' }));
+			if (i == 0) trackElement.default = true;
+			trackElement.mode = 'showing';
+			this.videoElement.appendChild(trackElement);
+		}
+	}
+
+	async fetchVideoChunk(startTime) {
+		if (this.isFetching || !this.videoSourceBuffer || this.videoSourceBuffer.updating) return;
+
+		this.isFetching = true;
+
+		try {
+			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}`);
+			if (!response.ok) {
+				throw new Error('Failed to fetch video chunk');
+			}
+
+			const arrayBuffer = await response.arrayBuffer();
+
+			// Parse the binary data using the VideoResponseParser class
+			const parser = new VideoResponseParser(arrayBuffer);
+			const parsedData = parser.parse();
+
+			// Append the video data to the source buffer
+			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating) {
+				this.videoSourceBuffer.appendBuffer(parsedData.videoData);
+			}
+
+			// Append audio data to the audio source buffers
+			const audioSourceBuffer = this.audioSourceBuffer;
+			if (audioSourceBuffer && !audioSourceBuffer.updating) {
+				audioSourceBuffer.appendBuffer(parsedData.audioTracks[this.audioIdx].data);
+			}
+		} catch (error) {
+			console.error('Error fetching video chunk:', error);
+		} finally {
+			this.isFetching = false;
+		}
+	}
+
+	async reloadVideoChunk(currentTime, ceil) {
+		try {
+			this.videoSourceBuffer.abort();
+			this.audioSourceBuffer.abort();
+
+			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
+			this.videoSourceBuffer.timestampOffset = newTime;
+			this.audioSourceBuffer.timestampOffset = newTime;
+			await this.fetchVideoChunk(newTime);
+			return newTime;
+		} catch (error) {
+			console.error('Error during reload:', error.message);
+		}
+	}
+
+	getRelevantBufferEnd() {
+		let bufferEnd = 0;
+
+		for (let i = 0; i < this.videoSourceBuffer.buffered.length; i++) {
+			const start = this.videoSourceBuffer.buffered.start(i);
+			const end = this.videoSourceBuffer.buffered.end(i);
+
+			if (start <= this.videoElement.currentTime && end > bufferEnd) {
+				bufferEnd = end;
+			}
+		}
+
+		return bufferEnd;
+	}
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
