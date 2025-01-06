@@ -152,7 +152,8 @@ class VideoPlayer {
 		this.videoElement = document.getElementById(videoElementId);
 		this.videoPath = encodeURI(videoPath);
 		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
-		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
+		//this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
+		this.audioMimeType = 'audio/mp4 ; codecs="opus"';
 		this.mediaSource = null;
 		this.videoSourceBuffer = null;
 		this.audioSourceBuffer = null;
@@ -293,12 +294,14 @@ class VideoPlayer {
 
 		// Reset timestamp offset to current time
 		const currentTime = this.videoElement.currentTime;
-		this.audioSourceBuffer.timestampOffset = currentTime;
-		this.videoSourceBuffer.timestampOffset = currentTime;
+		let flooredTime = Math.floor(currentTime / 10) * 10;
+		this.audioSourceBuffer.timestampOffset = flooredTime;
+		this.videoSourceBuffer.timestampOffset = flooredTime;
 
-		console.log(`Fetching audio data for new track at time ${currentTime}`);
+		console.log(`Fetching audio data for new track at time ${flooredTime}`);
 		// Fetch new audio data for the selected track
-		await this.fetchVideoChunk(currentTime);
+		await this.fetchVideoChunk(flooredTime);
+		this.videoElement.currentTime = flooredTime;
 	}
 
 
@@ -447,10 +450,10 @@ class VideoPlayer {
 			}
 
 			// Abort any ongoing updates
-			// if (this.videoSourceBuffer.updating || this.audioSourceBuffer.updating) {
-			this.videoSourceBuffer.abort();
-			this.audioSourceBuffer.abort();
-			//}
+			if (this.videoSourceBuffer.updating || this.audioSourceBuffer.updating) {
+				this.videoSourceBuffer.abort();
+				this.audioSourceBuffer.abort();
+			}
 
 			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
 
