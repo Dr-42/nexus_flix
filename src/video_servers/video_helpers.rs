@@ -154,10 +154,14 @@ impl VideoResponse {
     }
 }
 
-pub async fn get_video_data(path: &str, start_timestamp: f64) -> Result<VideoResponse, String> {
+pub async fn get_video_data(
+    path: &str,
+    start_timestamp: f64,
+    duration: Option<f64>,
+) -> Result<VideoResponse, String> {
     let video_metadata = get_video_metadata(path).await?;
     let mut video_data = VideoResponse::default();
-    let duration = 10.0;
+    let duration = duration.unwrap_or(10.0);
     println!("Duration: {}", duration);
     for track in &video_metadata.tracks {
         match track.kind {

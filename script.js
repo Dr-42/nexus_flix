@@ -405,7 +405,7 @@ class VideoPlayer {
 		this.isFetching = true;
 
 		try {
-			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}&audioTrack=${this.audioIdx}`);
+			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}&duration=10`);
 			if (!response.ok) {
 				throw new Error('Failed to fetch video chunk');
 			}

@@ -13,6 +13,7 @@ mod video_helpers;
 pub struct VideoRequest {
     pub path: String,
     pub timestamp: Option<f64>,
+    pub duration: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -41,8 +42,12 @@ pub async fn serve_video(Query(params): Query<VideoRequest>) -> impl IntoRespons
     let input_path = params.path;
     println!("Input path: {}", input_path);
 
-    let video_data =
-        video_helpers::get_video_data(&input_path, params.timestamp.unwrap_or(0.0)).await;
+    let video_data = video_helpers::get_video_data(
+        &input_path,
+        params.timestamp.unwrap_or(0.0),
+        params.duration,
+    )
+    .await;
     match video_data {
         Ok(data) => Response::builder()
             .status(StatusCode::PARTIAL_CONTENT)
