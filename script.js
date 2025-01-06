@@ -179,10 +179,6 @@ class VideoPlayer {
 			nativeControlsForTouch: true,
 			playbackRates: [0.5, 1, 1.5, 2],
 			controlBar: {
-				skipButtons: {
-					forward: 5,
-					backward: 5
-				},
 				// Switch between subtitle tracks
 				subtitles: {
 					default: 0
@@ -190,8 +186,37 @@ class VideoPlayer {
 				// Switch between audio tracks
 				audioTracks: {
 					default: 0
+				},
+				remainingTimeDisplay: {
+					displayNegative: false
 				}
 			},
+			spatialNavigation: {
+				enabled: true,
+				horizontalSeek: true
+			},
+			userActions: {
+				hotkeys: function(event) {
+					// `this` is the player in this context
+
+					// `x` key = pause
+					if (event.which === 88) {
+						this.pause();
+					}
+					// `y` key = play
+					if (event.which === 89) {
+						this.play();
+					}
+					// `j` key = seek backward
+					if (event.which === 74) {
+						this.currentTime(this.currentTime() - 10);
+					}
+					// `l` key = seek forward
+					if (event.which === 76) {
+						this.currentTime(this.currentTime() + 10);
+					}
+				}
+			}
 		});
 
 		let audioTracks = this.videoMetadata.getAudioTracks();
@@ -207,19 +232,75 @@ class VideoPlayer {
 		}
 		var audioTrackList = this.player.audioTracks();
 		var self = this;
-		audioTrackList.addEventListener('change', function() {
+		audioTrackList.addEventListener('change', async function() {
 			for (var i = 0; i < audioTrackList.length; i++) {
 				var vidjsAudioTrack = audioTrackList[i];
 				if (vidjsAudioTrack.enabled) {
-					console.log(self);
-					self.audioIdx = self.videoMetadata.getAudioTracks()[i].id;
-					self.reloadVideoChunk(self.videoElement.currentTime, true);
+					const newAudioTrackId = self.videoMetadata.getAudioTracks()[i].id;
+
+					// If the selected audio track is different from the current one
+					if (newAudioTrackId !== self.audioIdx) {
+						self.audioIdx = newAudioTrackId;
+
+						// Clear the audio buffer and refetch audio data
+						await self.switchAudioTrack();
+					}
+
 					console.log(`Switched to audio track: ${vidjsAudioTrack.id} Idx: ${self.audioIdx}`);
 					return;
 				}
 			}
 		});
 	}
+
+	async switchAudioTrack() {
+		// Abort any ongoing source buffer operations
+		if (this.audioSourceBuffer.updating) {
+			await new Promise((resolve) =>
+				this.audioSourceBuffer.addEventListener('updateend', resolve, { once: true })
+			);
+		}
+
+		// Check if there is any buffered range to remove
+		const audioBufferedRanges = this.audioSourceBuffer.buffered;
+		if (audioBufferedRanges.length > 0) {
+			const audioBufferStart = audioBufferedRanges.start(0);
+			const audioBufferEnd = audioBufferedRanges.end(audioBufferedRanges.length - 1);
+
+			console.log(`Clearing audio buffer from ${audioBufferStart} to ${audioBufferEnd}`);
+			this.audioSourceBuffer.remove(audioBufferStart, audioBufferEnd);
+
+			// Wait for buffer removal to complete
+			await new Promise((resolve) =>
+				this.audioSourceBuffer.addEventListener('updateend', resolve, { once: true })
+			);
+		}
+
+		// Clear the video buffer
+		const videoBufferedRanges = this.videoSourceBuffer.buffered;
+		if (videoBufferedRanges.length > 0) {
+			const videoBufferStart = videoBufferedRanges.start(0);
+			const videoBufferEnd = videoBufferedRanges.end(videoBufferedRanges.length - 1);
+
+			console.log(`Clearing video buffer from ${videoBufferStart} to ${videoBufferEnd}`);
+			this.videoSourceBuffer.remove(videoBufferStart, videoBufferEnd);
+
+			// Wait for buffer removal to complete
+			await new Promise((resolve) =>
+				this.videoSourceBuffer.addEventListener('updateend', resolve, { once: true })
+			);
+		}
+
+		// Reset timestamp offset to current time
+		const currentTime = this.videoElement.currentTime;
+		this.audioSourceBuffer.timestampOffset = currentTime;
+		this.videoSourceBuffer.timestampOffset = currentTime;
+
+		console.log(`Fetching audio data for new track at time ${currentTime}`);
+		// Fetch new audio data for the selected track
+		await this.fetchVideoChunk(currentTime);
+	}
+
 
 	async initializeMediaSource() {
 		this.mediaSource = new MediaSource();
@@ -244,16 +325,20 @@ class VideoPlayer {
 		});
 
 		this.videoElement.addEventListener('seeked', () => {
+			console.log('Seeked');
 			this.isSeeking = false;
 		});
 
 		this.videoElement.addEventListener('timeupdate', async () => {
-			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) return;
+			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) {
+				console.log('Skipping time update');
+				return;
+			}
 
 			const currentTime = this.videoElement.currentTime;
 			const bufferEnd = this.getRelevantBufferEnd();
 
-			if (currentTime >= bufferEnd - 2) {
+			if (currentTime >= bufferEnd - 3) {
 				const newTime = await this.reloadVideoChunk(currentTime, true);
 				if (this.isSeeking) {
 					console.log(`Seeking to time: ${newTime}`);
@@ -271,7 +356,6 @@ class VideoPlayer {
 			console.error('SourceBuffer error:', e);
 		});
 
-		let audioTracks = this.videoMetadata.getAudioTracks();
 		const audioSourceBuffer = this.mediaSource.addSourceBuffer(this.audioMimeType);
 		audioSourceBuffer.mode = 'segments';
 		audioSourceBuffer.addEventListener('error', (e) => {
@@ -321,7 +405,7 @@ class VideoPlayer {
 		this.isFetching = true;
 
 		try {
-			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}`);
+			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}&audioTrack=${this.audioIdx}`);
 			if (!response.ok) {
 				throw new Error('Failed to fetch video chunk');
 			}
@@ -332,18 +416,24 @@ class VideoPlayer {
 			const parser = new VideoResponseParser(arrayBuffer);
 			const parsedData = parser.parse();
 
-			// Append the video data to the source buffer
+			// Append the video data to the video source buffer
 			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating) {
 				this.videoSourceBuffer.appendBuffer(parsedData.videoData);
+				await new Promise((resolve) =>
+					this.videoSourceBuffer.addEventListener('updateend', resolve, { once: true })
+				);
 			}
 
-			// Append audio data to the audio source buffers
-			const audioSourceBuffer = this.audioSourceBuffer;
-			if (audioSourceBuffer && !audioSourceBuffer.updating) {
-				audioSourceBuffer.appendBuffer(parsedData.audioTracks[this.audioIdx].data);
+			// Append audio data to the audio source buffer
+			if (this.audioSourceBuffer && !this.audioSourceBuffer.updating) {
+				this.audioSourceBuffer.appendBuffer(parsedData.audioTracks[this.audioIdx].data);
+				await new Promise((resolve) =>
+					this.audioSourceBuffer.addEventListener('updateend', resolve, { once: true })
+				);
 			}
+
 		} catch (error) {
-			console.error('Error fetching video chunk:', error);
+			console.error('Error fetching video chunk:', error.message);
 		} finally {
 			this.isFetching = false;
 		}
@@ -351,12 +441,23 @@ class VideoPlayer {
 
 	async reloadVideoChunk(currentTime, ceil) {
 		try {
+			if (!this.videoSourceBuffer || !this.audioSourceBuffer) {
+				console.error('Source buffers not initialized');
+				return;
+			}
+
+			// Abort any ongoing updates
+			// if (this.videoSourceBuffer.updating || this.audioSourceBuffer.updating) {
 			this.videoSourceBuffer.abort();
 			this.audioSourceBuffer.abort();
+			//}
 
 			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
+
+			console.log(`Reloading video and audio chunks at time: ${newTime}`);
 			this.videoSourceBuffer.timestampOffset = newTime;
 			this.audioSourceBuffer.timestampOffset = newTime;
+
 			await this.fetchVideoChunk(newTime);
 			return newTime;
 		} catch (error) {
