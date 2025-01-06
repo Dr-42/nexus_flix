@@ -179,6 +179,7 @@ class VideoPlayer {
 			fluid: true,
 			nativeControlsForTouch: true,
 			playbackRates: [0.5, 1, 1.5, 2],
+			nativeControlsForTouch: false,
 			controlBar: {
 				// Switch between subtitle tracks
 				subtitles: {
@@ -218,6 +219,15 @@ class VideoPlayer {
 					}
 				}
 			}
+		});
+		this.player.ready(function() {
+			var settings = this.textTrackSettings;
+			settings.setValues({
+				"backgroundColor": "#000",
+				"backgroundOpacity": "0",
+				"edgeStyle": "uniform",
+			});
+			settings.updateDisplay();
 		});
 
 		let audioTracks = this.videoMetadata.getAudioTracks();
@@ -494,7 +504,7 @@ class VideoPlayer {
 document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
-		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E13.mkv',
+		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');
