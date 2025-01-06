@@ -20,7 +20,7 @@ The server runs on port 3000 if the port is not specified.
 firefox http://localhost:3000
 ```
 
-Tested on Fedora server with both Firefox and Gtk-Webview.
+Tested on Fedora server with Firefox, Chrome and Gtk-Webview.
 
 Make sure you have an NVIDIA GPU with proper support for NVDEC and NVENC. The ffmpeg I got from fedora repos(Both official repo and rpm-fusion) didn't work so I compiled my own and added it to path named ffmpeg-next.
 

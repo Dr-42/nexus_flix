@@ -301,7 +301,7 @@ class VideoPlayer {
 		console.log(`Fetching audio data for new track at time ${flooredTime}`);
 		// Fetch new audio data for the selected track
 		await this.fetchVideoChunk(flooredTime);
-		this.videoElement.currentTime = flooredTime;
+		this.videoElement.currentTime = flooredTime + 0.3;
 	}
 
 
@@ -319,11 +319,19 @@ class VideoPlayer {
 
 	addEventListeners() {
 		this.videoElement.addEventListener('seeking', async () => {
+			let bufferedAreas = { currentTime: this.videoElement.currentTime, buffered: [] };
+			let videoBufferedRanges = this.videoSourceBuffer.buffered;
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				bufferedAreas.buffered.push({ start: start, end: end });
+			}
+			console.log('Seeking', bufferedAreas);
 			this.isSeeking = true;
 			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating && !this.isFetching) {
 				const currentTime = this.videoElement.currentTime;
-				const newTime = await this.reloadVideoChunk(currentTime, false);
-				console.log(`Fetching chunk proactively for seeking at time: ${newTime}`);
+				this.fetchVideoChunk(currentTime);
+				console.log(`Fetching chunk for seeking at time: ${currentTime}`);
 			}
 		});
 
@@ -342,11 +350,11 @@ class VideoPlayer {
 			const bufferEnd = this.getRelevantBufferEnd();
 
 			if (currentTime >= bufferEnd - 3) {
-				const newTime = await this.reloadVideoChunk(currentTime, true);
+				const newTime = await this.bufferNextVideoChunk(currentTime);
 				if (this.isSeeking) {
 					console.log(`Seeking to time: ${newTime}`);
 					this.isSeeking = false;
-					this.videoElement.currentTime = newTime;
+					this.videoElement.currentTime = newTime + 0.3;
 				}
 			}
 		});
@@ -408,6 +416,14 @@ class VideoPlayer {
 		this.isFetching = true;
 
 		try {
+			// Abort any ongoing updates
+			if (this.videoSourceBuffer.updating || this.audioSourceBuffer.updating) {
+				this.videoSourceBuffer.abort();
+				this.audioSourceBuffer.abort();
+			}
+
+			this.videoSourceBuffer.timestampOffset = startTime;
+			this.audioSourceBuffer.timestampOffset = startTime;
 			const response = await fetch(`/video?path=${this.videoPath}&timestamp=${startTime}&duration=10`);
 			if (!response.ok) {
 				throw new Error('Failed to fetch video chunk');
@@ -442,25 +458,16 @@ class VideoPlayer {
 		}
 	}
 
-	async reloadVideoChunk(currentTime, ceil) {
+	async bufferNextVideoChunk(currentTime) {
 		try {
 			if (!this.videoSourceBuffer || !this.audioSourceBuffer) {
 				console.error('Source buffers not initialized');
 				return;
 			}
 
-			// Abort any ongoing updates
-			if (this.videoSourceBuffer.updating || this.audioSourceBuffer.updating) {
-				this.videoSourceBuffer.abort();
-				this.audioSourceBuffer.abort();
-			}
-
-			const newTime = ceil ? Math.ceil(currentTime / 10) * 10 : currentTime;
+			const newTime = Math.ceil(currentTime / 10) * 10;
 
 			console.log(`Reloading video and audio chunks at time: ${newTime}`);
-			this.videoSourceBuffer.timestampOffset = newTime;
-			this.audioSourceBuffer.timestampOffset = newTime;
-
 			await this.fetchVideoChunk(newTime);
 			return newTime;
 		} catch (error) {
