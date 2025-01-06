@@ -30,7 +30,9 @@ class VideoMetadata {
 	}
 
 	getSubtitleTracks() {
-		return this.tracks.filter((track) => track.kind === 'Subtitle');
+		// track.kind is an object in the form { Subtitle : true }
+		// I dont care about the value
+		return this.tracks.filter((track) => track.kind.Subtitle);
 	}
 }
 
@@ -504,7 +506,8 @@ class VideoPlayer {
 document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
-		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
+		//'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
+		'/run/media/spandan/Spandy HDD/Movies/Forrest Gump/Forrest Gump.mp4'
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');

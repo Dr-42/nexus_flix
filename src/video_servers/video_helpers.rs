@@ -11,7 +11,8 @@ use tokio::{
 pub enum Tracktype {
     Audio,
     Video,
-    Subtitle,
+    // Is external or embedded in the video
+    Subtitle(bool),
 }
 
 #[derive(Serialize, Debug)]
@@ -52,7 +53,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
             let track_type = match track_type.as_str().unwrap() {
                 "audio" => Tracktype::Audio,
                 "video" => Tracktype::Video,
-                "subtitle" => Tracktype::Subtitle,
+                "subtitle" => Tracktype::Subtitle(false),
                 _ => continue,
             };
             let track_id = match track_type {
@@ -61,7 +62,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
                     audio_idx
                 }
                 Tracktype::Video => 0,
-                Tracktype::Subtitle => {
+                Tracktype::Subtitle(_) => {
                     subtitle_idx += 1;
                     subtitle_idx
                 }
@@ -76,7 +77,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
                     match track_type {
                         Tracktype::Audio => format!("Audio {}", track_id),
                         Tracktype::Video => format!("Video {}", track_id),
-                        Tracktype::Subtitle => format!("Subtitle {}", track_id),
+                        Tracktype::Subtitle(_) => format!("Subtitle {}", track_id),
                     }
                 }
             } else {
@@ -90,6 +91,34 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
             tracks.push(track);
         }
     }
+
+    // Check if there exists a subtitle file right beside the video
+    let video_path = std::path::Path::new(input_path);
+    let video_dir = video_path.parent().unwrap();
+    let subtitle_exts = ["srt"];
+
+    for file in video_dir.read_dir().unwrap() {
+        let subtitle_path = file.unwrap().path();
+        let ext = subtitle_path.extension().unwrap().to_str().unwrap();
+        if !subtitle_exts.contains(&ext) {
+            continue;
+        }
+        println!("Subtitle path: {}", subtitle_path.display());
+        if subtitle_path.exists() {
+            subtitle_idx += 1;
+            let track = Track {
+                id: subtitle_idx as u64,
+                kind: Tracktype::Subtitle(true),
+                label: subtitle_path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+            };
+            tracks.push(track);
+        }
+    }
+
     let output = Command::new("ffprobe")
         .args(["-select_streams", "v:0"])
         .args(["-show_entries", "format=duration"])
@@ -109,6 +138,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
         .unwrap();
 
     let metadata = VideoMetadata { tracks, duration };
+    println!("Metadata: {:#?}", metadata);
     Ok(metadata)
 }
 
@@ -175,7 +205,7 @@ pub async fn get_video_data(
                 println!("Audio data: {}", audio_stream.data.len());
                 video_data.audio_data.push(audio_stream);
             }
-            Tracktype::Subtitle => {
+            _ => {
                 continue;
             }
         }
@@ -305,12 +335,13 @@ pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
     let sub_tracks = video_metadata
         .tracks
         .iter()
-        .filter(|t| t.kind == Tracktype::Subtitle)
+        .filter(|t| (t.kind == Tracktype::Subtitle(true)) || (t.kind == Tracktype::Subtitle(false)))
         .collect::<Vec<_>>();
     let num_subs = sub_tracks.len() as u32;
     let mut subs = Vec::new();
     for sub_track in sub_tracks {
-        let sub = get_subtitle(path, sub_track.id).await;
+        let is_external = sub_track.kind == Tracktype::Subtitle(true);
+        let sub = get_subtitle(path, sub_track.id, is_external).await;
         subs.push(SubtitleData {
             id: sub_track.id,
             data: sub,
@@ -320,47 +351,96 @@ pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
     Ok(VideoSubs { num_subs, subs })
 }
 
-async fn get_subtitle(path: &str, id: u64) -> String {
-    let buffer = Arc::new(Mutex::new(Vec::new()));
-    let buffer_clone = buffer.clone();
-    let path = Arc::new(path.to_string());
+async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
+    if is_external {
+        let video_path = std::path::Path::new(path);
+        let sub_path = video_path.with_extension("srt");
+        if !sub_path.exists() {
+            return "".to_string();
+        }
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let buffer_clone = buffer.clone();
+        let path = Arc::new(sub_path.to_string_lossy().to_string());
 
-    // Spawn FFmpeg transcoding process
-    let handle = tokio::spawn(async move {
-        let mut ffmpeg = Command::new("ffmpeg-next")
-            .args(["-v", "error"])
-            // .args(["-hwaccel", "cuda"])
-            // .args(["-hwaccel_output_format", "cuda"])
-            .args(["-i", &path])
-            .args(["-map", format!("0:s:{}", id).as_str()])
-            .args(["-c:s", "webvtt"])
-            .args(["-f", "webvtt"])
-            .args(["pipe:1"])
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to start FFmpeg");
+        // Spawn FFmpeg transcoding process
+        let handle = tokio::spawn(async move {
+            let mut ffmpeg = Command::new("ffmpeg-next")
+                .args(["-v", "error"])
+                // .args(["-hwaccel", "cuda"])
+                // .args(["-hwaccel_output_format", "cuda"])
+                .args(["-i", &path])
+                .args(["-c:s", "webvtt"])
+                .args(["-f", "webvtt"])
+                .args(["pipe:1"])
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to start FFmpeg");
 
-        if let Some(mut stdout) = ffmpeg.stdout.take() {
-            let mut read_buf = vec![0; 1024 * 1024 * 2];
-            loop {
-                match stdout.read(&mut read_buf).await {
-                    Ok(0) => {
-                        break;
-                    }
-                    Ok(bytes_read) => {
-                        let mut buffer_writer = buffer_clone.lock().await;
-                        buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to read FFmpeg stdout: {}", e);
+            if let Some(mut stdout) = ffmpeg.stdout.take() {
+                let mut read_buf = vec![0; 1024 * 1024 * 2];
+                loop {
+                    match stdout.read(&mut read_buf).await {
+                        Ok(0) => {
+                            break;
+                        }
+                        Ok(bytes_read) => {
+                            let mut buffer_writer = buffer_clone.lock().await;
+                            buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to read FFmpeg stdout: {}", e);
+                        }
                     }
                 }
             }
-        }
-    });
-    handle.await.unwrap();
-    let buffer_reader = buffer.lock().await;
-    let binary = buffer_reader.clone();
+        });
+        handle.await.unwrap();
+        let buffer_reader = buffer.lock().await;
+        let binary = buffer_reader.clone();
 
-    String::from_utf8_lossy(&binary).to_string()
+        String::from_utf8_lossy(&binary).to_string()
+    } else {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let buffer_clone = buffer.clone();
+        let path = Arc::new(path.to_string());
+
+        // Spawn FFmpeg transcoding process
+        let handle = tokio::spawn(async move {
+            let mut ffmpeg = Command::new("ffmpeg-next")
+                .args(["-v", "error"])
+                // .args(["-hwaccel", "cuda"])
+                // .args(["-hwaccel_output_format", "cuda"])
+                .args(["-i", &path])
+                .args(["-map", format!("0:s:{}", id).as_str()])
+                .args(["-c:s", "webvtt"])
+                .args(["-f", "webvtt"])
+                .args(["pipe:1"])
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to start FFmpeg");
+
+            if let Some(mut stdout) = ffmpeg.stdout.take() {
+                let mut read_buf = vec![0; 1024 * 1024 * 2];
+                loop {
+                    match stdout.read(&mut read_buf).await {
+                        Ok(0) => {
+                            break;
+                        }
+                        Ok(bytes_read) => {
+                            let mut buffer_writer = buffer_clone.lock().await;
+                            buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to read FFmpeg stdout: {}", e);
+                        }
+                    }
+                }
+            }
+        });
+        handle.await.unwrap();
+        let buffer_reader = buffer.lock().await;
+        let binary = buffer_reader.clone();
+
+        String::from_utf8_lossy(&binary).to_string()
+    }
 }
