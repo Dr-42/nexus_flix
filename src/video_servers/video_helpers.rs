@@ -11,7 +11,6 @@ use tokio::{
 pub enum Tracktype {
     Audio,
     Video,
-    // Is external or embedded in the video
     Subtitle(bool),
 }
 
@@ -26,6 +25,7 @@ pub struct Track {
 pub struct VideoMetadata {
     pub duration: f64,
     pub tracks: Vec<Track>,
+    pub unavailable_subs: Vec<u64>,
 }
 
 pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, String> {
@@ -48,6 +48,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
     let mut audio_idx = -1;
     let mut subtitle_idx = -1;
 
+    let mut unavailable_subs = Vec::new();
     for stream in metadata {
         if let Some(track_type) = stream.get("codec_type") {
             let track_type = match track_type.as_str().unwrap() {
@@ -83,6 +84,15 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
             } else {
                 format!("Track {}", track_id)
             };
+            if track_type == Tracktype::Subtitle(false) {
+                let sub_codec = stream["codec_name"].as_str().unwrap();
+                let graphic_codecs = vec!["dvbsub", "dvdsub", "pgs", "xsub"];
+                for graphic_codec in graphic_codecs {
+                    if sub_codec.contains(graphic_codec) {
+                        unavailable_subs.push(track_id);
+                    }
+                }
+            }
             let track = Track {
                 id: track_id,
                 kind: track_type,
@@ -130,15 +140,17 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
         .unwrap();
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    println!("Output: {}", output_str);
     let mut lines = output_str.lines();
     let duration = lines
         .next()
         .and_then(|s| s.trim().parse::<f64>().ok())
         .unwrap();
 
-    let metadata = VideoMetadata { tracks, duration };
-    println!("Metadata: {:#?}", metadata);
+    let metadata = VideoMetadata {
+        tracks,
+        duration,
+        unavailable_subs,
+    };
     Ok(metadata)
 }
 
@@ -279,8 +291,7 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
-            //.args(["-c:a", "libfdk_aac"])
-            .args(["-c:a", "libopus"])
+            .args(["-c:a", "libfdk_aac"])
             .args(["-map", format!("0:a:{}", id).as_str()])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args([
@@ -337,11 +348,15 @@ pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
         .iter()
         .filter(|t| (t.kind == Tracktype::Subtitle(true)) || (t.kind == Tracktype::Subtitle(false)))
         .collect::<Vec<_>>();
-    let num_subs = sub_tracks.len() as u32;
+    let num_subs = sub_tracks.len() as u32 - video_metadata.unavailable_subs.len() as u32;
     let mut subs = Vec::new();
     for sub_track in sub_tracks {
+        if video_metadata.unavailable_subs.contains(&sub_track.id) {
+            continue;
+        }
         let is_external = sub_track.kind == Tracktype::Subtitle(true);
         let sub = get_subtitle(path, sub_track.id, is_external).await;
+        println!("Sub id: {} size: {}", sub_track.id, sub.len());
         subs.push(SubtitleData {
             id: sub_track.id,
             data: sub,

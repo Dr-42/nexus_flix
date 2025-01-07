@@ -15,14 +15,16 @@ class Track {
 }
 
 class VideoMetadata {
-	constructor(duration, tracks) {
+	constructor(duration, tracks, unavailableSubs) {
 		this.duration = duration;
 		this.tracks = tracks;
+		this.unavailableSubs = unavailableSubs;
 	}
 
 	static fromJson(json) {
 		const tracks = Track.fromJsonArray(json.tracks);
-		return new VideoMetadata(json.duration, tracks);
+		const unavailableSubs = json.unavailable_subs;
+		return new VideoMetadata(json.duration, tracks, unavailableSubs);
 	}
 
 	getAudioTracks() {
@@ -30,9 +32,9 @@ class VideoMetadata {
 	}
 
 	getSubtitleTracks() {
-		// track.kind is an object in the form { Subtitle : true }
+		// track.kind is an object in the form { "Subtitle" : true }
 		// I dont care about the value
-		return this.tracks.filter((track) => track.kind.Subtitle);
+		return this.tracks.filter((track) => (typeof track.kind === 'object') && ("Subtitle" in track.kind));
 	}
 }
 
@@ -154,8 +156,7 @@ class VideoPlayer {
 		this.videoElement = document.getElementById(videoElementId);
 		this.videoPath = encodeURI(videoPath);
 		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
-		//this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
-		this.audioMimeType = 'audio/mp4 ; codecs="opus"';
+		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
 		this.mediaSource = null;
 		this.videoSourceBuffer = null;
 		this.audioSourceBuffer = null;
@@ -406,11 +407,13 @@ class VideoPlayer {
 
 		const responseJson = await response.json();
 		const subtitleData = SubtitleResponseParser.fromJson(responseJson);
+		console.log(`Num subs: ${subtitleData.numSubtitles} ArrayLength: ${subtitleData.subtitles.length}`);
 
 		// Add track fields and subtitle data
 		const subtitleTracks = this.videoMetadata.getSubtitleTracks();
+		console.log(`Subtitle tracks: ${JSON.stringify(subtitleTracks)}`);
 		for (let i = 0; i < subtitleData.numSubtitles; i++) {
-			const subtitleTrack = subtitleTracks[i];
+			const subtitleTrack = subtitleTracks.find((track) => track.id == subtitleData.subtitles[i].id);
 			let trackElement = document.createElement('track');
 			trackElement.kind = 'subtitles';
 			trackElement.label = subtitleTrack.label;
@@ -507,7 +510,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
 		//'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
-		'/run/media/spandan/Spandy HDD/Movies/Forrest Gump/Forrest Gump.mp4'
+		'/run/media/spandan/Spandy HDD/Series/That Time I Got Reincarnated as a Slime/Season 1/S01E11-Gabiru Is Here! [FDAA5CE0].mkv'
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');
