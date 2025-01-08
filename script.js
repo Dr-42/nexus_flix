@@ -1,5 +1,3 @@
-//import { WebVTTParser } from 'webvtt-parser';
-
 class Track {
 	constructor(id, kind, label) {
 		this.id = id;
@@ -454,8 +452,9 @@ class VideoPlayer {
 				for (let j = 0; j < vjsTexttracks.length; j++) {
 					if (vjsTexttracks[j].label === trackElement.element.label) {
 						let vjsTexttrack = vjsTexttracks[j];
-						for (let k = 0; k < vjsTexttrack.cues.length; k++) {
-							vjsTexttrack.removeCue(vjsTexttrack.cues[k]);
+						// Remove all existing cues
+						while (vjsTexttrack.cues.length > 0) {
+							vjsTexttrack.removeCue(vjsTexttrack.cues[0]);
 						}
 						const parser = new WebVTTParser();
 						const subtitleCues = parser.parse(subtitleText, 'subtitles');
