@@ -160,15 +160,23 @@ pub struct AudioData {
     pub data: Vec<u8>,
 }
 
+#[derive(Serialize, Debug)]
+pub struct SubtitleData {
+    pub id: u64,
+    pub data: String,
+}
+
 #[derive(Default, Debug)]
 pub struct VideoResponse {
     pub video_data: Vec<u8>,
     pub audio_data: Vec<AudioData>,
+    pub subtitle_data: Vec<SubtitleData>,
 }
 
 // NOTE: The binary data is serialized as
 // [
 //     u32 -> number of audio tracks,
+//     u32 -> number of subtitle tracks,
 //     u64 -> data length of the video track,
 //     Vec<u8> -> video track data,
 //     -- For each audio track --
@@ -183,6 +191,9 @@ impl VideoResponse {
         data.write_u32_le(self.audio_data.len() as u32)
             .await
             .unwrap();
+        data.write_u32_le(self.subtitle_data.len() as u32)
+            .await
+            .unwrap();
         data.write_u64_le(self.video_data.len() as u64)
             .await
             .unwrap();
@@ -191,6 +202,11 @@ impl VideoResponse {
             data.write_u64_le(audio.id).await.unwrap();
             data.write_u64_le(audio.data.len() as u64).await.unwrap();
             data.write_all(&audio.data).await.unwrap();
+        }
+        for subtitle in &self.subtitle_data {
+            data.write_u64_le(subtitle.id).await.unwrap();
+            data.write_u64_le(subtitle.data.len() as u64).await.unwrap();
+            data.write_all(subtitle.data.as_bytes()).await.unwrap();
         }
         data
     }
@@ -217,8 +233,14 @@ pub async fn get_video_data(
                 println!("Audio data: {}", audio_stream.data.len());
                 video_data.audio_data.push(audio_stream);
             }
-            _ => {
-                continue;
+            Tracktype::Subtitle(external) => {
+                if video_metadata.unavailable_subs.contains(&track.id) {
+                    continue;
+                }
+                let subtitle_stream =
+                    get_subtitle(path, track.id, external, start_timestamp, duration).await;
+                println!("Subtitle data: {}", subtitle_stream.data.len());
+                video_data.subtitle_data.push(subtitle_stream);
             }
         }
     }
@@ -329,50 +351,30 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
     AudioData { id, data }
 }
 
-#[derive(Serialize)]
-pub struct SubtitleData {
-    pub id: u64,
-    pub data: String,
-}
-
-#[derive(Serialize)]
-pub struct VideoSubs {
-    pub num_subs: u32,
-    pub subs: Vec<SubtitleData>,
-}
-
-pub async fn get_video_subs(path: &str) -> Result<VideoSubs, String> {
-    let video_metadata = get_video_metadata(path).await?;
-    let sub_tracks = video_metadata
-        .tracks
-        .iter()
-        .filter(|t| (t.kind == Tracktype::Subtitle(true)) || (t.kind == Tracktype::Subtitle(false)))
-        .collect::<Vec<_>>();
-    let num_subs = sub_tracks.len() as u32 - video_metadata.unavailable_subs.len() as u32;
-    let mut subs = Vec::new();
-    for sub_track in sub_tracks {
-        if video_metadata.unavailable_subs.contains(&sub_track.id) {
-            continue;
-        }
-        let is_external = sub_track.kind == Tracktype::Subtitle(true);
-        let sub = get_subtitle(path, sub_track.id, is_external).await;
-        println!("Sub id: {} size: {}", sub_track.id, sub.len());
-        subs.push(SubtitleData {
-            id: sub_track.id,
-            data: sub,
-        });
-    }
-
-    Ok(VideoSubs { num_subs, subs })
-}
-
-async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
+async fn get_subtitle(
+    path: &str,
+    id: u64,
+    is_external: bool,
+    start_timestamp: f64,
+    duration: f64,
+) -> SubtitleData {
     if is_external {
         let video_path = std::path::Path::new(path);
-        let sub_path = video_path.with_extension("srt");
-        if !sub_path.exists() {
-            return "".to_string();
+        let video_directory = video_path.parent().unwrap();
+        let mut sub_path = None;
+        for file in video_directory.read_dir().unwrap() {
+            let file_path = file.unwrap().path();
+            if file_path.extension().unwrap() == "srt" {
+                sub_path = Some(file_path);
+            }
         }
+        if sub_path.is_none() {
+            return SubtitleData {
+                id,
+                data: String::new(),
+            };
+        }
+        let sub_path = sub_path.unwrap();
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let buffer_clone = buffer.clone();
         let path = Arc::new(sub_path.to_string_lossy().to_string());
@@ -381,9 +383,10 @@ async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
         let handle = tokio::spawn(async move {
             let mut ffmpeg = Command::new("ffmpeg-next")
                 .args(["-v", "error"])
-                // .args(["-hwaccel", "cuda"])
-                // .args(["-hwaccel_output_format", "cuda"])
+                .args(["-ss", &start_timestamp.to_string()])
                 .args(["-i", &path])
+                .args(["-output_ts_offset", &start_timestamp.to_string()])
+                .args(["-t", &duration.to_string()])
                 .args(["-c:s", "webvtt"])
                 .args(["-f", "webvtt"])
                 .args(["pipe:1"])
@@ -413,7 +416,9 @@ async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
         let buffer_reader = buffer.lock().await;
         let binary = buffer_reader.clone();
 
-        String::from_utf8_lossy(&binary).to_string()
+        let data = String::from_utf8_lossy(&binary).to_string();
+
+        SubtitleData { id, data }
     } else {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let buffer_clone = buffer.clone();
@@ -423,9 +428,10 @@ async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
         let handle = tokio::spawn(async move {
             let mut ffmpeg = Command::new("ffmpeg-next")
                 .args(["-v", "error"])
-                // .args(["-hwaccel", "cuda"])
-                // .args(["-hwaccel_output_format", "cuda"])
+                .args(["-ss", &start_timestamp.to_string()])
                 .args(["-i", &path])
+                .args(["-output_ts_offset", &start_timestamp.to_string()])
+                .args(["-t", &duration.to_string()])
                 .args(["-map", format!("0:s:{}", id).as_str()])
                 .args(["-c:s", "webvtt"])
                 .args(["-f", "webvtt"])
@@ -456,6 +462,8 @@ async fn get_subtitle(path: &str, id: u64, is_external: bool) -> String {
         let buffer_reader = buffer.lock().await;
         let binary = buffer_reader.clone();
 
-        String::from_utf8_lossy(&binary).to_string()
+        let data = String::from_utf8_lossy(&binary).to_string();
+
+        SubtitleData { id, data }
     }
 }

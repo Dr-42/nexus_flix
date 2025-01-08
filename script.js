@@ -46,8 +46,10 @@ class VideoResponseParser {
 
 		// Parsed fields
 		this.numAudioTracks = 0;
+		this.numSubTracks = 0;
 		this.videoData = null;
 		this.audioTracks = [];
+		this.subtitleTracks = [];
 	}
 
 	// Helper method to read a Uint32
@@ -87,13 +89,12 @@ class VideoResponseParser {
 			if (this.numAudioTracks < 0 || this.numAudioTracks > 100) {
 				throw new Error(`Invalid number of audio tracks: ${this.numAudioTracks}`);
 			}
-			console.log(`Number of audio tracks: ${this.numAudioTracks}`);
+			this.numSubTracks = this.readUint32();
 			// Read and validate the video track length
 			const videoTrackLength = Number(this.readBigUint64());
 			if (videoTrackLength <= 0 || videoTrackLength > this.dataView.byteLength) {
 				throw new Error(`Invalid video track length: ${videoTrackLength}`);
 			}
-			console.log(`Video track length: ${videoTrackLength}`);
 			this.videoData = this.readBytes(videoTrackLength);
 
 			// Read and store audio tracks
@@ -105,49 +106,33 @@ class VideoResponseParser {
 					throw new Error(`Invalid audio track length: ${trackLength}`);
 				}
 				const trackData = this.readBytes(trackLength);
-
-				console.log(`Audio track ID: ${trackId}, length: ${trackLength}`);
 				this.audioTracks.push({ id: trackId, data: trackData });
+			}
+
+			// Read and store subtitle tracks
+			for (let i = 0; i < this.numSubTracks; i++) {
+				const trackId = this.readBigUint64();
+				const trackLength = Number(this.readBigUint64());
+				if (trackLength <= 0 || trackLength > this.dataView.byteLength) {
+					throw new Error(`Invalid subtitle track length: ${trackLength}`);
+				}
+				const trackData = this.readBytes(trackLength);
+				this.subtitleTracks.push({ id: trackId, data: trackData });
 			}
 
 			// Return parsed data
 			return {
 				numAudioTracks: this.numAudioTracks,
+				numSubTracks: this.numSubTracks,
 				videoData: this.videoData,
 				audioTracks: this.audioTracks,
+				subtitleTracks: this.subtitleTracks
 			};
 		} catch (error) {
 			console.error('Error parsing video data:', error.message);
 			throw error;
 		}
 	}
-}
-
-class SubtitleData {
-	constructor(id, data) {
-		this.id = id;
-		this.data = data;
-	}
-
-	static fromJson(json) {
-		return new SubtitleData(json.id, json.data);
-	}
-
-	static fromJsonArray(jsonArray) {
-		return jsonArray.map((json) => SubtitleData.fromJson(json));
-	}
-}
-
-class SubtitleResponseParser {
-	constructor(numSubtitles, subtitles) {
-		this.numSubtitles = numSubtitles;
-		this.subtitles = subtitles;
-	}
-
-	static fromJson(json) {
-		return new SubtitleResponseParser(json.num_subs, SubtitleData.fromJsonArray(json.subs));
-	}
-
 }
 
 class VideoPlayer {
@@ -165,6 +150,7 @@ class VideoPlayer {
 		this.videoMetadata = null;
 		this.player = null;
 		this.audioIdx = 0;
+		this.subtitleTrackElements = [];
 
 		if ('MediaSource' in window) {
 			this.initializeMediaSource();
@@ -176,6 +162,10 @@ class VideoPlayer {
 
 	initVideoJs() {
 		this.player = videojs(this.videoElementId, {
+			html5: {
+				nativeAudioTracks: true,
+				nativeTextTracks: true,
+			},
 			controls: true,
 			autoplay: true,
 			enableSmoothSeeking: true,
@@ -259,8 +249,6 @@ class VideoPlayer {
 						// Clear the audio buffer and refetch audio data
 						await self.switchAudioTrack();
 					}
-
-					console.log(`Switched to audio track: ${vidjsAudioTrack.id} Idx: ${self.audioIdx}`);
 					return;
 				}
 			}
@@ -281,7 +269,6 @@ class VideoPlayer {
 			const audioBufferStart = audioBufferedRanges.start(0);
 			const audioBufferEnd = audioBufferedRanges.end(audioBufferedRanges.length - 1);
 
-			console.log(`Clearing audio buffer from ${audioBufferStart} to ${audioBufferEnd}`);
 			this.audioSourceBuffer.remove(audioBufferStart, audioBufferEnd);
 
 			// Wait for buffer removal to complete
@@ -296,7 +283,6 @@ class VideoPlayer {
 			const videoBufferStart = videoBufferedRanges.start(0);
 			const videoBufferEnd = videoBufferedRanges.end(videoBufferedRanges.length - 1);
 
-			console.log(`Clearing video buffer from ${videoBufferStart} to ${videoBufferEnd}`);
 			this.videoSourceBuffer.remove(videoBufferStart, videoBufferEnd);
 
 			// Wait for buffer removal to complete
@@ -311,7 +297,6 @@ class VideoPlayer {
 		this.audioSourceBuffer.timestampOffset = flooredTime;
 		this.videoSourceBuffer.timestampOffset = flooredTime;
 
-		console.log(`Fetching audio data for new track at time ${flooredTime}`);
 		// Fetch new audio data for the selected track
 		await this.fetchVideoChunk(flooredTime);
 		this.videoElement.currentTime = flooredTime + 0.3;
@@ -339,23 +324,19 @@ class VideoPlayer {
 				const end = videoBufferedRanges.end(i);
 				bufferedAreas.buffered.push({ start: start, end: end });
 			}
-			console.log('Seeking', bufferedAreas);
 			this.isSeeking = true;
 			if (this.videoSourceBuffer && !this.videoSourceBuffer.updating && !this.isFetching) {
 				const currentTime = this.videoElement.currentTime;
 				this.fetchVideoChunk(currentTime);
-				console.log(`Fetching chunk for seeking at time: ${currentTime}`);
 			}
 		});
 
 		this.videoElement.addEventListener('seeked', () => {
-			console.log('Seeked');
 			this.isSeeking = false;
 		});
 
 		this.videoElement.addEventListener('timeupdate', async () => {
 			if (!this.videoSourceBuffer || this.videoSourceBuffer.updating || this.isFetching) {
-				console.log('Skipping time update');
 				return;
 			}
 
@@ -365,7 +346,6 @@ class VideoPlayer {
 			if (currentTime >= bufferEnd - 3) {
 				const newTime = await this.bufferNextVideoChunk(currentTime);
 				if (this.isSeeking) {
-					console.log(`Seeking to time: ${newTime}`);
 					this.isSeeking = false;
 					this.videoElement.currentTime = newTime + 0.3;
 				}
@@ -397,31 +377,30 @@ class VideoPlayer {
 
 		this.videoMetadata = videoMetadata;
 		this.mediaSource.duration = this.videoMetadata.duration;
-
-		console.log(`Video metadata: ${JSON.stringify(videoMetadata)}`);
 	}
 
 	async fetchSubtitles() {
-		const response = await fetch(`/video-subs?path=${this.videoPath}`);
-		if (!response.ok) throw new Error('Failed to fetch subtitles');
-
-		const responseJson = await response.json();
-		const subtitleData = SubtitleResponseParser.fromJson(responseJson);
-		console.log(`Num subs: ${subtitleData.numSubtitles} ArrayLength: ${subtitleData.subtitles.length}`);
-
 		// Add track fields and subtitle data
 		const subtitleTracks = this.videoMetadata.getSubtitleTracks();
-		console.log(`Subtitle tracks: ${JSON.stringify(subtitleTracks)}`);
-		for (let i = 0; i < subtitleData.numSubtitles; i++) {
-			const subtitleTrack = subtitleTracks.find((track) => track.id == subtitleData.subtitles[i].id);
-			let trackElement = document.createElement('track');
+		for (let i = 0; i < subtitleTracks.length; i++) {
+			if (this.videoMetadata.unavailableSubs.includes(i)) continue;
+			const subtitleTrack = subtitleTracks[i];
+
+			const trackElement = document.createElement('track');
 			trackElement.kind = 'subtitles';
 			trackElement.label = subtitleTrack.label;
-			trackElement.srclang = subtitleTrack.language;
-			trackElement.src = URL.createObjectURL(new Blob([subtitleData.subtitles[i].data], { type: 'text/vtt' }));
-			if (i == 0) trackElement.default = true;
+			trackElement.srclang = 'en';
+			if (i === 0) trackElement.default = true;
+
+			// Use an initial empty Blob
+			const emptyBlob = new Blob([], { type: 'text/vtt' });
+			trackElement.src = URL.createObjectURL(emptyBlob);
+
 			trackElement.mode = 'showing';
 			this.videoElement.appendChild(trackElement);
+
+			// Store track reference for later updates
+			this.subtitleTrackElements.push({ idx: i, element: trackElement });
 		}
 	}
 
@@ -466,6 +445,23 @@ class VideoPlayer {
 				);
 			}
 
+			// Append subtitle data to track elements
+			for (let i = 0; i < parsedData.numSubTracks; i++) {
+				const subtitleTrackData = parsedData.subtitleTracks[i];
+				const trackElement = this.subtitleTrackElements.find((track) => track.idx === Number(subtitleTrackData.id));
+				let subtitleText = new TextDecoder('utf-8').decode(subtitleTrackData.data);
+				URL.revokeObjectURL(trackElement.element.src);
+				trackElement.element.src = URL.createObjectURL(new Blob([subtitleText], { type: 'text/vtt' }));
+			}
+
+			const tracks = this.player.textTracks();
+			for (let i = 0; i < tracks.length; i++) {
+				const track = tracks[i];
+				if (track.kind === 'subtitles') {
+					track.mode = 'showing'; // Ensure the subtitle is visible
+				}
+			}
+
 		} catch (error) {
 			console.error('Error fetching video chunk:', error.message);
 		} finally {
@@ -482,7 +478,6 @@ class VideoPlayer {
 
 			const newTime = Math.ceil(currentTime / 10) * 10;
 
-			console.log(`Reloading video and audio chunks at time: ${newTime}`);
 			await this.fetchVideoChunk(newTime);
 			return newTime;
 		} catch (error) {
@@ -509,8 +504,7 @@ class VideoPlayer {
 document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
-		//'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
-		'/run/media/spandan/Spandy HDD/Series/That Time I Got Reincarnated as a Slime/Season 1/S01E11-Gabiru Is Here! [FDAA5CE0].mkv'
+		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');
