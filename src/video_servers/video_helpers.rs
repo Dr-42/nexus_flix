@@ -313,7 +313,9 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
-            .args(["-c:a", "libfdk_aac"])
+            //.args(["-c:a", "libfdk_aac"])
+            .args(["-c:a", "libopus"])
+            .args(["-ac", "2"])
             .args(["-map", format!("0:a:{}", id).as_str()])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args([

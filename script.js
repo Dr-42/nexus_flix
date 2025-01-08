@@ -1,3 +1,5 @@
+//import { WebVTTParser } from 'webvtt-parser';
+
 class Track {
 	constructor(id, kind, label) {
 		this.id = id;
@@ -141,7 +143,8 @@ class VideoPlayer {
 		this.videoElement = document.getElementById(videoElementId);
 		this.videoPath = encodeURI(videoPath);
 		this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
-		this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
+		//this.audioMimeType = 'audio/mp4 ; codecs="mp4a.40.2"';
+		this.audioMimeType = 'audio/mp4 ; codecs="opus"';
 		this.mediaSource = null;
 		this.videoSourceBuffer = null;
 		this.audioSourceBuffer = null;
@@ -163,8 +166,8 @@ class VideoPlayer {
 	initVideoJs() {
 		this.player = videojs(this.videoElementId, {
 			html5: {
-				nativeAudioTracks: true,
-				nativeTextTracks: true,
+				nativeAudioTracks: false,
+				nativeTextTracks: false,
 			},
 			controls: true,
 			autoplay: true,
@@ -308,8 +311,8 @@ class VideoPlayer {
 		this.videoElement.src = URL.createObjectURL(this.mediaSource);
 		this.mediaSource.addEventListener('sourceopen', async () => {
 			await this.loadInitialMetadata();
-			await this.fetchSubtitles();
 			this.initVideoJs();
+			await this.fetchSubtitles();
 			await this.initializeSourceBuffer();
 			await this.fetchVideoChunk(0.0);
 		});
@@ -386,21 +389,18 @@ class VideoPlayer {
 			if (this.videoMetadata.unavailableSubs.includes(i)) continue;
 			const subtitleTrack = subtitleTracks[i];
 
-			const trackElement = document.createElement('track');
-			trackElement.kind = 'subtitles';
-			trackElement.label = subtitleTrack.label;
-			trackElement.srclang = 'en';
-			if (i === 0) trackElement.default = true;
+			// const emptyBlob = new Blob([], { type: 'text/vtt' });
+			// const url = URL.createObjectURL(emptyBlob);
 
-			// Use an initial empty Blob
-			const emptyBlob = new Blob([], { type: 'text/vtt' });
-			trackElement.src = URL.createObjectURL(emptyBlob);
-
-			trackElement.mode = 'showing';
-			this.videoElement.appendChild(trackElement);
+			let track = this.player.addRemoteTextTrack({
+				kind: 'subtitles',
+				label: subtitleTrack.label,
+				srclang: 'en',
+				//src: url,
+			});
 
 			// Store track reference for later updates
-			this.subtitleTrackElements.push({ idx: i, element: trackElement });
+			this.subtitleTrackElements.push({ idx: i, element: track });
 		}
 	}
 
@@ -450,18 +450,23 @@ class VideoPlayer {
 				const subtitleTrackData = parsedData.subtitleTracks[i];
 				const trackElement = this.subtitleTrackElements.find((track) => track.idx === Number(subtitleTrackData.id));
 				let subtitleText = new TextDecoder('utf-8').decode(subtitleTrackData.data);
-				URL.revokeObjectURL(trackElement.element.src);
-				trackElement.element.src = URL.createObjectURL(new Blob([subtitleText], { type: 'text/vtt' }));
-			}
-
-			const tracks = this.player.textTracks();
-			for (let i = 0; i < tracks.length; i++) {
-				const track = tracks[i];
-				if (track.kind === 'subtitles') {
-					track.mode = 'showing'; // Ensure the subtitle is visible
+				let vjsTexttracks = this.player.textTracks();
+				for (let j = 0; j < vjsTexttracks.length; j++) {
+					if (vjsTexttracks[j].label === trackElement.element.label) {
+						let vjsTexttrack = vjsTexttracks[j];
+						for (let k = 0; k < vjsTexttrack.cues.length; k++) {
+							vjsTexttrack.removeCue(vjsTexttrack.cues[k]);
+						}
+						const parser = new WebVTTParser();
+						const subtitleCues = parser.parse(subtitleText, 'subtitles');
+						for (let k = 0; k < subtitleCues.cues.length; k++) {
+							vjsTexttrack.addCue(subtitleCues.cues[k]);
+						}
+					}
 				}
+				//URL.revokeObjectURL(trackElement.element.src);
+				//trackElement.element.src(URL.createObjectURL(new Blob([subtitleText], { type: 'text/vtt' })));
 			}
-
 		} catch (error) {
 			console.error('Error fetching video chunk:', error.message);
 		} finally {
@@ -504,7 +509,8 @@ class VideoPlayer {
 document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
-		'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
+		//'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
+		'/run/media/spandan/Spandy HDD/Series/That Time I Got Reincarnated as a Slime/Season 1/S01E03-Battle at the Goblin Village [8DB036B0].mkv'
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');
