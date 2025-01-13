@@ -152,6 +152,9 @@ class VideoPlayer {
 		this.player = null;
 		this.audioIdx = 0;
 		this.subtitleTrackElements = [];
+		this.seekDuration = 0;
+		this.seekDelay = 500; // in milliseconds
+		this.seekTimer = null;
 
 		if ('MediaSource' in window) {
 			this.initializeMediaSource();
@@ -159,6 +162,23 @@ class VideoPlayer {
 		} else {
 			console.error('MediaSource API is not supported in this browser.');
 		}
+	}
+
+	// Debounce logic for seek actions
+	debounceSeek(duration) {
+		this.seekDuration += duration;
+		if (this.seekTimer) {
+			clearTimeout(this.seekTimer);
+		}
+		this.seekTimer = setTimeout(() => {
+			const timeSeek = this.player.currentTime() + this.seekDuration;
+			this.isSeeking = true;
+			this.player.currentTime(timeSeek);
+			this.seekDuration = 0;
+			this.seekTimer = null;
+			// Fire the timeupdate event and wait for it to update the UI
+			this.videoElement.dispatchEvent(new Event('timeupdate'));
+		}, this.seekDelay);
 	}
 
 	initVideoJs() {
@@ -192,27 +212,23 @@ class VideoPlayer {
 				horizontalSeek: true
 			},
 			userActions: {
-				hotkeys: function(event) {
-					// `this` is the player in this context
-
-					// `x` key = pause
-					if (event.which === 88) {
-						this.pause();
+				hotkeys: (event) => {
+					// `event.key` contains the key name
+					switch (event.key) {
+						case "k": // Pause Play
+							this.player.paused() ? this.player.play() : this.player.pause();
+							break;
+						case "j": // Seek backward (debounced)
+							this.debounceSeek(-10);
+							break;
+						case "l": // Seek forward (debounced)
+							this.debounceSeek(10);
+							break;
+						default:
+							break;
 					}
-					// `y` key = play
-					if (event.which === 89) {
-						this.play();
-					}
-					// `j` key = seek backward
-					if (event.which === 74) {
-						this.currentTime(this.currentTime() - 10);
-					}
-					// `l` key = seek forward
-					if (event.which === 76) {
-						this.currentTime(this.currentTime() + 10);
-					}
-				}
-			}
+				},
+			},
 		});
 		this.player.ready(function() {
 			var settings = this.textTrackSettings;
@@ -344,7 +360,7 @@ class VideoPlayer {
 			const currentTime = this.videoElement.currentTime;
 			const bufferEnd = this.getRelevantBufferEnd();
 
-			if (currentTime >= bufferEnd - 3) {
+			if ((currentTime >= bufferEnd - 3) || this.isSeeking) {
 				const newTime = await this.bufferNextVideoChunk(currentTime);
 				if (this.isSeeking) {
 					this.isSeeking = false;
