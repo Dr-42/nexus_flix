@@ -1,6 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
-use std::{process::Stdio, sync::Arc};
+use std::{ffi::OsStr, process::Stdio, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::Command,
@@ -105,12 +105,15 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
     // Check if there exists a subtitle file right beside the video
     let video_path = std::path::Path::new(input_path);
     let video_dir = video_path.parent().unwrap();
-    let subtitle_exts = ["srt"];
+    let subtitle_exts = [OsStr::new("srt"), OsStr::new("vtt")];
 
     for file in video_dir.read_dir().unwrap() {
         let subtitle_path = file.unwrap().path();
-        let ext = subtitle_path.extension().unwrap().to_str().unwrap();
-        if !subtitle_exts.contains(&ext) {
+        if let Some(ext) = subtitle_path.extension() {
+            if !subtitle_exts.contains(&ext) {
+                continue;
+            }
+        } else {
             continue;
         }
         println!("Subtitle path: {}", subtitle_path.display());
@@ -262,8 +265,8 @@ async fn get_video(path: &str, start_timestamp: f64, duration: f64) -> Vec<u8> {
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
             .args(["-c:v", "h264_nvenc"])
-            .args(["-crf", "0"])
-            .args(["-vf", "scale_cuda=1080:720:format=yuv420p"])
+            .args(["-crf", "20"])
+            .args(["-vf", "scale_cuda=1920:1080:format=yuv420p"])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args([
                 "-movflags",
@@ -313,8 +316,8 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
-            //.args(["-c:a", "libfdk_aac"])
-            .args(["-c:a", "libopus"])
+            .args(["-c:a", "libfdk_aac"])
+            //.args(["-c:a", "libopus"])
             .args(["-ac", "2"])
             .args(["-map", format!("0:a:{}", id).as_str()])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])

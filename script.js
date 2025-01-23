@@ -213,16 +213,81 @@ class VideoPlayer {
 			},
 			userActions: {
 				hotkeys: (event) => {
-					// `event.key` contains the key name
 					switch (event.key) {
-						case "k": // Pause Play
+						case " ":
+							// Space: Pause/Resume
+							event.preventDefault();
 							this.player.paused() ? this.player.play() : this.player.pause();
 							break;
-						case "j": // Seek backward (debounced)
-							this.debounceSeek(-10);
+						case "ArrowLeft":
+							if (event.ctrlKey) {
+								// Ctrl+Left: Go back 10 seconds
+								this.debounceSeek(-10);
+							} else if (event.shiftKey) {
+								// Shift+Left: Go back 1 second
+								this.debounceSeek(-1);
+							} else {
+								// Left: Go back 5 seconds
+								this.debounceSeek(-5);
+							}
 							break;
-						case "l": // Seek forward (debounced)
-							this.debounceSeek(10);
+						case "ArrowRight":
+							if (event.ctrlKey) {
+								// Ctrl+Right: Go forward 10 seconds
+								this.debounceSeek(10);
+							} else if (event.shiftKey) {
+								// Shift+Right: Go forward 1 second
+								this.debounceSeek(1);
+							} else {
+								// Right: Go forward 5 seconds
+								this.debounceSeek(5);
+							}
+							break;
+						case "ArrowUp":
+							// Up: Increase volume
+							this.player.volume(Math.min(this.player.volume() + 0.1, 1));
+							break;
+						case "ArrowDown":
+							// Down: Decrease volume
+							this.player.volume(Math.max(this.player.volume() - 0.1, 0));
+							break;
+						case "f":
+							// F: Toggle fullscreen
+							if (this.player.isFullscreen()) {
+								this.player.exitFullscreen();
+							} else {
+								this.player.requestFullscreen();
+							}
+							break;
+						case "Escape":
+							// Esc: Quit fullscreen
+							if (this.player.isFullscreen()) {
+								this.player.exitFullscreen();
+							}
+							break;
+						case "a":
+							if (event.shiftKey) {
+								// Shift+A: Cycle audio tracks backward
+								this.switchAudioTrackByIndex(-1);
+							} else if (event.ctrlKey) {
+								// Ctrl+A: Toggle audio mute
+								this.player.muted(!this.player.muted());
+							} else {
+								// A: Cycle audio tracks forward
+								this.switchAudioTrackByIndex(1);
+							}
+							break;
+						case "s":
+							if (event.shiftKey) {
+								// Shift+S: Cycle subtitle tracks backward
+								this.switchSubtitleTrackByIndex(-1);
+							} else if (event.ctrlKey) {
+								// Ctrl+S: Toggle subtitle visibility
+								this.player.textTracks().forEach((track) => track.enabled(!track.enabled()));
+							} else {
+								// S: Cycle subtitle tracks forward
+								this.switchSubtitleTrackByIndex(1);
+							}
 							break;
 						default:
 							break;
@@ -230,6 +295,7 @@ class VideoPlayer {
 				},
 			},
 		});
+
 		this.player.ready(function() {
 			var settings = this.textTrackSettings;
 			settings.setValues({
@@ -270,6 +336,19 @@ class VideoPlayer {
 				}
 			}
 		});
+	}
+
+	async switchSubtitleTrackByIndex(direction) {
+		// TODO: Implement subtitle track switching
+	}
+
+	async switchAudioTrackByIndex(direction) {
+		const audioTracks = this.videoMetadata.getAudioTracks();
+		const currentIndex = audioTracks.findIndex((track) => track.id === this.audioIdx);
+		const newIndex = (currentIndex + direction + audioTracks.length) % audioTracks.length;
+		const newAudioTrackId = audioTracks[newIndex].id;
+		this.audioIdx = newAudioTrackId;
+		await this.switchAudioTrack();
 	}
 
 	async switchAudioTrack() {
@@ -318,7 +397,6 @@ class VideoPlayer {
 		await this.fetchVideoChunk(flooredTime);
 		this.videoElement.currentTime = flooredTime + 0.3;
 	}
-
 
 	async initializeMediaSource() {
 		this.mediaSource = new MediaSource();
@@ -402,9 +480,6 @@ class VideoPlayer {
 		for (let i = 0; i < subtitleTracks.length; i++) {
 			if (this.videoMetadata.unavailableSubs.includes(i)) continue;
 			const subtitleTrack = subtitleTracks[i];
-
-			// const emptyBlob = new Blob([], { type: 'text/vtt' });
-			// const url = URL.createObjectURL(emptyBlob);
 
 			let track = this.player.addRemoteTextTrack({
 				kind: 'subtitles',
@@ -525,7 +600,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 	const videoPlayer = new VideoPlayer(
 		'videoPlayer',
 		//'/run/media/spandan/Spandy HDD/Series/Fullmetal Alchemist Brotherhood/Series/Fullmetal Alchemist Brotherhood - S01E19.mkv',
-		'/run/media/spandan/Spandy HDD/Series/That Time I Got Reincarnated as a Slime/Season 1/S01E03-Battle at the Goblin Village [8DB036B0].mkv'
+		// '/run/media/spandan/Spandy HDD/Series/That Time I Got Reincarnated as a Slime/Season 1/S01E03-Battle at the Goblin Village [8DB036B0].mkv'
+		'/home/spandan/Videos/p5hk.mp4'
 	);
 	if (videoPlayer) {
 		console.log('Video player initialized');
