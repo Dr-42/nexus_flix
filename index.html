@@ -1999,7 +1999,7 @@
                   const episodeNum = parseInt(match[2], 10);
                   localFileDatabase[`tv-${mediaInfo.id}`][
                     `${seasonNum}-${episodeNum}`
-                  ] = file.webkitRelativePath;
+                  ] = file.filePath;
                 }
               }
               return mediaInfo;
@@ -2286,10 +2286,7 @@
 
           try {
             console.log("filePath:", filePath);
-            nexusPlayer = new VideoPlayer(
-              "video-player",
-              "/run/media/spandan/Spandy HDD/" + filePath,
-            );
+            nexusPlayer = new VideoPlayer("video-player", filePath);
           } catch (error) {
             console.error("Failed to initialize VideoPlayer:", error);
             videoErrorOverlay.classList.remove("hidden");
