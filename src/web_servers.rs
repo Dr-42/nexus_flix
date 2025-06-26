@@ -12,12 +12,3 @@ pub async fn serve_index() -> impl IntoResponse {
         .body(Body::new(index_text.to_string()))
         .unwrap()
 }
-
-pub async fn serve_script() -> impl IntoResponse {
-    let script_text = include_str!("../script.js");
-    Response::builder()
-        .status(200)
-        .header(header::CONTENT_TYPE, "text/javascript")
-        .body(Body::new(script_text.to_string()))
-        .unwrap()
-}

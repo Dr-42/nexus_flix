@@ -44,6 +44,7 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
     let metadata: Value = serde_json::from_str(&stdout).unwrap();
     let mut tracks: Vec<Track> = Vec::new();
 
+    println!("Metadata: {}", metadata["streams"]);
     let metadata = metadata["streams"].as_array().unwrap();
     let mut audio_idx = -1;
     let mut subtitle_idx = -1;
