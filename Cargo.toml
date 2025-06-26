@@ -11,3 +11,5 @@ hyper = "1.5.1"
 futures = "0.3.31"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
+walkdir = "2.5.0"
+infer = "0.19.0"

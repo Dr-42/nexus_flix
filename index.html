@@ -605,14 +605,6 @@
                   class="flex flex-col items-center sm:items-end mt-4 sm:mt-0"
                 >
                   <div class="flex items-center gap-4">
-                    <input
-                      type="file"
-                      id="import-library-input"
-                      class="hidden"
-                      webkitdirectory
-                      directory
-                      multiple
-                    />
                     <button
                       id="import-library-btn"
                       class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[color:var(--accent-primary)] text-white font-semibold hover:opacity-90 transition-opacity"
@@ -635,45 +627,17 @@
                   data-lucide="info"
                   class="w-6 h-6 text-[color:var(--accent-primary)] mt-1 flex-shrink-0"
                 ></i>
-                <div>
-                  <h4 class="font-bold text-lg">Enable Local Playback</h4>
-                  <p class="text-[color:var(--text-secondary)] mt-1">
-                    To play your local files, you need to run the
-                    <code
-                      class="bg-black/50 px-1.5 py-0.5 rounded text-sm font-mono"
-                      >vserve.py</code
-                    >
-                    server.
+                <div class="flex-grow">
+                  <p class="text-sm font-semibold mb-2">
+                    Welcome to your local media library!
                   </p>
-                  <ol class="list-decimal list-inside mt-2 space-y-1">
-                    <li>
-                      Download the
-                      <a
-                        href="https://github.com/Dr-42/vserve"
-                        target="_blank"
-                        class="underline text-[color:var(--accent-primary)] hover:text-white"
-                        >vserve repository</a
-                      >
-                      and place
-                      <code
-                        class="bg-black/50 px-1.5 py-0.5 rounded text-sm font-mono"
-                        >vserve.py</code
-                      >
-                      in the root folder of your media library (the same one you
-                      select to import).
-                    </li>
-                    <li>
-                      Open a terminal or command prompt in that folder and run:
-                      <code
-                        class="block bg-black/50 p-2 rounded text-sm font-mono mt-1"
-                        >python vserve.py</code
-                      >
-                    </li>
-                    <li>Keep the server running while you use NexusFlix.</li>
-                  </ol>
+                  <p class="text-sm">
+                    Here you can manage your local media files and add them to
+                    your library. Simply select the folder containing your media
+                    files and click "Import".
+                  </p>
                 </div>
               </div>
-
               <div id="local-status" class="mb-6"></div>
 
               <div
@@ -967,6 +931,24 @@
               console.error("Error parsing video data:", error.message);
               throw error;
             }
+          }
+        }
+
+        class FileData {
+          constructor(file) {
+            this.fileName = file.file_name;
+            this.filePath = file.file_path;
+            this.dateModified = file.date_modified;
+            this.fileSize = file.file_size;
+            this.type = file.mime_type;
+          }
+
+          static fromJson(json) {
+            return new FileData(json);
+          }
+
+          static fromJsonArray(jsonArray) {
+            return jsonArray.map((json) => FileData.fromJson(json));
           }
         }
 
@@ -1879,7 +1861,7 @@
                             <div class="flex flex-wrap gap-4">
                                 <button id="ai-synopsis-btn" class="flex-1 px-4 py-2 rounded-lg bg-[color:var(--accent-secondary)] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait">✨ Get AI Synopsis</button>
                             </div>
-                            
+
                             <div id="similar-section" class="pt-6 border-t border-[color:var(--border-color)]">
                                 ${
                                   item.recommendations?.results.length > 0
@@ -1904,20 +1886,19 @@
 
         // --- LOCAL MEDIA HANDLING ---
         const importLibraryBtn = document.getElementById("import-library-btn");
-        const importLibraryInput = document.getElementById(
-          "import-library-input",
-        );
         const localStatus = document.getElementById("local-status");
         const localMediaGrid = document.getElementById("local-media-grid");
         const libraryTabs = document.getElementById("library-tabs");
 
-        importLibraryBtn.addEventListener("click", () =>
-          importLibraryInput.click(),
-        );
-        importLibraryInput.addEventListener("change", (e) =>
-          handleLibrarySelection(e.target.files),
-        );
+        importLibraryBtn.addEventListener("click", async () => {
+          const response = await fetch(`/file_list`);
+          if (!response.ok) throw new Error("Failed to fetch files");
 
+          const files = await response.json();
+          console.log(files);
+          const fileData = FileData.fromJsonArray(files);
+          handleLibrarySelection(fileData);
+        });
         libraryTabs.addEventListener("click", (e) => {
           if (e.target.classList.contains("library-tab")) {
             libraryTabs.querySelector(".active").classList.remove("active");
@@ -1928,6 +1909,7 @@
 
         async function handleLibrarySelection(allFiles) {
           if (!allFiles || allFiles.length === 0) return;
+          console.log(allFiles);
           const files = Array.from(allFiles);
 
           localStatus.innerHTML = `
@@ -1942,8 +1924,23 @@
           const seriesToProcess = new Map();
 
           for (const file of files) {
-            const pathParts = file.webkitRelativePath.split("/");
+            // Declare file.filePath as a string
+            const filePath = file.filePath;
+            const pathParts = filePath.split("/").filter(Boolean);
             if (pathParts.length < 2) continue;
+
+            // Discard the entire path before Series or Movies
+            while (pathParts.length > 2) {
+              if (
+                pathParts[0].toLowerCase() === "movies" ||
+                pathParts[0].toLowerCase() === "series"
+              ) {
+                break;
+              } else {
+                pathParts.shift();
+              }
+            }
+            console.log(pathParts);
 
             const typeFolder = pathParts[0].toLowerCase();
             const titleFolder = pathParts[1];
@@ -1978,10 +1975,11 @@
               if (videoFiles.length === 0) return null;
 
               const largestVideo = videoFiles.reduce((largest, current) =>
-                current.size > largest.size ? current : largest,
+                current.fileSize > largest.fileSize ? current : largest,
               );
+              console.log(largestVideo.fileName);
               localFileDatabase[`movie-${mediaInfo.id}`] =
-                largestVideo.webkitRelativePath;
+                largestVideo.filePath;
               return mediaInfo;
             },
           );
@@ -1995,7 +1993,7 @@
               localFileDatabase[`tv-${mediaInfo.id}`] = {};
 
               for (const file of files) {
-                const match = file.name.match(episodeRegex);
+                const match = file.fileName.match(episodeRegex);
                 if (match) {
                   const seasonNum = parseInt(match[1], 10);
                   const episodeNum = parseInt(match[2], 10);
@@ -2040,7 +2038,6 @@
           setTimeout(() => {
             localStatus.innerHTML = "";
           }, 6000);
-          importLibraryInput.value = "";
         }
 
         async function searchAndFetchFirstResult(query, type) {
