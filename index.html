@@ -719,6 +719,12 @@
         <button class="modal-close-btn" id="video-close-btn">
           <i data-lucide="x" class="w-6 h-6"></i>
         </button>
+        <video
+          id="video-player"
+          class="video-js vjs-default-skin"
+          controls
+          preload="auto"
+        ></video>
         <div
           id="video-error-overlay"
           class="absolute inset-0 bg-black/80 flex-col justify-center items-center text-center p-8 hidden"
@@ -1146,6 +1152,7 @@
             });
 
             let audioTracks = this.videoMetadata.getAudioTracks();
+            console.log(audioTracks);
             for (let i = 0; i < audioTracks.length; i++) {
               const audioTrack = audioTracks[i];
               var vidjsTrack = new videojs.AudioTrack({
@@ -1175,6 +1182,8 @@
                   return;
                 }
               }
+
+              console.log(`tracks: ${audioTrackList.length}`);
             });
           }
 
@@ -1982,7 +1991,7 @@
               const mediaInfo = await searchAndFetchFirstResult(title, "tv");
               if (!mediaInfo) return null;
 
-              const episodeRegex = /[. ]S(\d{1,2})E(\d{1,3})/i;
+              const episodeRegex = /S(\d{1,2})E(\d{1,3})/i;
               localFileDatabase[`tv-${mediaInfo.id}`] = {};
 
               for (const file of files) {
@@ -2348,7 +2357,6 @@
               icon.style.transform = "rotate(0deg)";
             } else {
               episodeList.style.maxHeight = episodeList.scrollHeight + "px";
-              icon.style.transform = "rotate(180deg)";
             }
           }
 
