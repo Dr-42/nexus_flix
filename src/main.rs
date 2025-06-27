@@ -1,6 +1,10 @@
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use std::env::args;
 
+mod api_servers;
 mod video_servers;
 mod web_servers;
 
@@ -15,7 +19,9 @@ async fn main() {
         .route("/", get(web_servers::serve_index))
         .route("/video", get(video_servers::serve_video))
         .route("/video-data", get(video_servers::serve_video_metadata))
-        .route("/file_list", get(video_servers::serve_file_list));
+        .route("/file_list", get(video_servers::serve_file_list))
+        .route("/api/add-media", post(api_servers::add_media))
+        .route("/api/get-media", get(api_servers::get_media));
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 

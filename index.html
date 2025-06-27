@@ -707,15 +707,15 @@
     </div>
 
     <script>
-      document.addEventListener("DOMContentLoaded", () => {
+      let localMovies = [];
+      let localSeries = [];
+      document.addEventListener("DOMContentLoaded", async () => {
         // --- API & SERVER CONFIG ---
         const TMDB_API_KEY = "cc0737ab5aa6d04d148832d81e90c36e"; // IMPORTANT: Replace with your actual TMDB API key
         const TMDB_BASE_URL = "https://api.themoviedb.org/3";
         const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
         const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=`; // Gemini key is handled by the environment
 
-        let localMovies = [];
-        let localSeries = [];
         const localFileDatabase = {}; // { 'movie-123': 'path/to/file.mkv', 'tv-456': { '1-1': 'path/to/S01E01.mkv' } }
         let movieGenres = [];
         let tvGenres = [];
@@ -1534,7 +1534,7 @@
         // --- API FETCHING WITH RATE LIMITING ---
         const apiQueue = [];
         let isFetching = false;
-        const FETCH_DELAY = 50; // ms between calls
+        const FETCH_DELAY = 2; // ms between calls
 
         async function processApiQueue() {
           if (apiQueue.length === 0 || isFetching) return;
@@ -1925,6 +1925,7 @@
 
           for (const file of files) {
             // Declare file.filePath as a string
+            console.log(file);
             const filePath = file.filePath;
             const pathParts = filePath.split("/").filter(Boolean);
             if (pathParts.length < 2) continue;
@@ -1940,7 +1941,6 @@
                 pathParts.shift();
               }
             }
-            console.log(pathParts);
 
             const typeFolder = pathParts[0].toLowerCase();
             const titleFolder = pathParts[1];
@@ -1977,7 +1977,6 @@
               const largestVideo = videoFiles.reduce((largest, current) =>
                 current.fileSize > largest.fileSize ? current : largest,
               );
-              console.log(largestVideo.fileName);
               localFileDatabase[`movie-${mediaInfo.id}`] =
                 largestVideo.filePath;
               return mediaInfo;
@@ -2026,6 +2025,20 @@
 
           localMovies = [...localMovies, ...newMovies];
           localSeries = [...localSeries, ...newSeries];
+
+          const storageData = {
+            movies: localMovies,
+            series: localSeries,
+          };
+
+          // Post this to the server
+          await fetch("/api/add-media", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(storageData),
+          });
 
           renderLocalMedia();
           loadAllContent(); // Refresh all pages to show "In Library" indicators
@@ -2427,8 +2440,171 @@
           sidebar.classList.toggle("-translate-x-full");
         });
 
+        // --- REFETCH LOCAL DATA ON START IF PRESENT ---
+        async function handleLibrarySelectionFromStorage(
+          allFiles,
+          movie_data,
+          series_data,
+        ) {
+          if (!allFiles || allFiles.length === 0) return;
+          console.log(allFiles);
+
+          const files = FileData.fromJsonArray(allFiles);
+
+          const moviesToProcess = new Map();
+          const seriesToProcess = new Map();
+
+          for (const file of files) {
+            // Declare file.filePath as a string
+            const filePath = file.filePath;
+            if (!filePath) {
+              console.warn("No file path found:", file);
+              continue;
+            }
+            const pathParts = filePath.split("/").filter(Boolean);
+            if (pathParts.length < 2) continue;
+
+            // Discard the entire path before Series or Movies
+            while (pathParts.length > 2) {
+              if (
+                pathParts[0].toLowerCase() === "movies" ||
+                pathParts[0].toLowerCase() === "series"
+              ) {
+                break;
+              } else {
+                pathParts.shift();
+              }
+            }
+
+            const typeFolder = pathParts[0].toLowerCase();
+            const titleFolder = pathParts[1];
+
+            let collection;
+            if (typeFolder === "movies") {
+              collection = moviesToProcess;
+            } else if (typeFolder === "series") {
+              collection = seriesToProcess;
+            } else {
+              continue;
+            }
+
+            if (!collection.has(titleFolder)) {
+              collection.set(titleFolder, []);
+            }
+            collection.get(titleFolder).push(file);
+          }
+
+          const moviePromises = Array.from(moviesToProcess.entries()).map(
+            async ([title, files]) => {
+              const mediaInfo = movie_data.find((m) => m.title === title);
+              if (!mediaInfo) return null;
+
+              var videoFiles = [];
+              for (const file of files) {
+                if (!file.type) {
+                  console.warn("No file type found:", file);
+                  continue;
+                }
+                if (file.type.startsWith("video/")) {
+                  videoFiles.push(file);
+                }
+              }
+              if (videoFiles.length === 0) return null;
+
+              const largestVideo = videoFiles.reduce((largest, current) =>
+                current.fileSize > largest.fileSize ? current : largest,
+              );
+              localFileDatabase[`movie-${mediaInfo.id}`] =
+                largestVideo.filePath;
+              return mediaInfo;
+            },
+          );
+
+          const seriesPromises = Array.from(seriesToProcess.entries()).map(
+            async ([title, files]) => {
+              const mediaInfo = series_data.find((m) => m.title === title);
+              if (!mediaInfo) return null;
+
+              const episodeRegex = /S(\d{1,2})E(\d{1,3})/i;
+              localFileDatabase[`tv-${mediaInfo.id}`] = {};
+
+              for (const file of files) {
+                const match = file.fileName.match(episodeRegex);
+                if (match) {
+                  const seasonNum = parseInt(match[1], 10);
+                  const episodeNum = parseInt(match[2], 10);
+                  localFileDatabase[`tv-${mediaInfo.id}`][
+                    `${seasonNum}-${episodeNum}`
+                  ] = file.filePath;
+                }
+              }
+              return mediaInfo;
+            },
+          );
+
+          const [movieResults, seriesResults] = await Promise.all([
+            Promise.all(moviePromises),
+            Promise.all(seriesPromises),
+          ]);
+
+          const newMovies = movieResults
+            .filter(Boolean)
+            .filter(
+              (newItem) =>
+                !localMovies.some((existing) => existing.id === newItem.id),
+            );
+          const newSeries = seriesResults
+            .filter(Boolean)
+            .filter(
+              (newItem) =>
+                !localSeries.some((existing) => existing.id === newItem.id),
+            );
+
+          localMovies = [...localMovies, ...newMovies];
+          localSeries = [...localSeries, ...newSeries];
+
+          const storageData = {
+            movies: localMovies,
+            series: localSeries,
+          };
+
+          renderLocalMedia();
+          loadAllContent(); // Refresh all pages to show "In Library" indicators
+
+          localStatus.innerHTML = `
+              <div class="p-4 bg-green-900/50 text-green-300 rounded-lg">
+                  <p>Import complete. Added ${localMovies.length} movies and ${localSeries.length} series to your library.</p>
+              </div>`;
+
+          setTimeout(() => {
+            localStatus.innerHTML = "";
+          }, 6000);
+        }
+
+        async function refetchAtStartup() {
+          const response = await fetch(`/api/get-media`);
+          if (!response.ok) {
+            console.error("Failed to fetch local media data");
+            return;
+          }
+          const localMedia = await response.json();
+          const localMv = localMedia.movies;
+          const localSr = localMedia.series;
+
+          const allFls = await fetch(`/file_list`);
+          if (!allFls.ok) {
+            console.error("Failed to fetch all files");
+            return;
+          }
+          const allFiles = await allFls.json();
+          console.log(allFiles);
+
+          handleLibrarySelectionFromStorage(allFiles, localMv, localSr);
+        }
+
         // --- INITIALIZATION ---
-        function initialize() {
+        async function initialize() {
+          await refetchAtStartup();
           lucide.createIcons();
           themeButtons[0].classList.add("active");
           fetchAndPopulateGenres();
@@ -2437,7 +2613,7 @@
           navigateTo(window.location.hash || "#dashboard");
         }
 
-        initialize();
+        await initialize();
       });
     </script>
   </body>
