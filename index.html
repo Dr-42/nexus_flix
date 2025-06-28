@@ -318,6 +318,16 @@
         color: var(--bg-primary);
         font-weight: 600;
       }
+      .loader-small {
+        width: 20px;
+        height: 20px;
+        border: 2px solid var(--text-primary);
+        border-bottom-color: transparent;
+        border-radius: 50%;
+        display: inline-block;
+        box-sizing: border-box;
+        animation: rotation 1s linear infinite;
+      }
     </style>
   </head>
   <body class="overflow-x-hidden">
@@ -1743,7 +1753,7 @@
           }
         }
 
-        // --- MODAL HANDLING ---
+        // --- MODAL AND TMDB CHANGE HANDLING ---
         const modal = document.getElementById("details-modal");
         const modalContent = document.getElementById("modal-content");
 
@@ -1760,11 +1770,58 @@
           }
         });
 
+        async function performTmdbChangeSearch(query, type, oldId) {
+          const resultsContainer = document.getElementById(
+            "tmdb-change-results",
+          );
+          resultsContainer.innerHTML = `<div class="flex justify-center items-center h-20"><div class="loader"></div></div>`;
+
+          try {
+            const data = await fetchFromTMDB(`search/${type}`, { query });
+            if (data.results.length === 0) {
+              resultsContainer.innerHTML = `<p class="text-center text-[color:var(--text-secondary)]">No results found.</p>`;
+              return;
+            }
+
+            resultsContainer.innerHTML = data.results
+              .map((result) => {
+                const title = result.title || result.name;
+                const year = (
+                  result.release_date ||
+                  result.first_air_date ||
+                  ""
+                ).substring(0, 4);
+                const posterPath = result.poster_path
+                  ? `${TMDB_IMAGE_BASE_URL}/w92${result.poster_path}`
+                  : "https://placehold.co/92x138/1f2937/ffffff?text=N/A";
+
+                return `
+                        <div class="flex items-center gap-4 p-2 rounded-lg bg-[color:var(--bg-tertiary)]">
+                            <img src="${posterPath}" class="w-12 h-auto rounded" onerror="this.onerror=null;this.src='https://placehold.co/92x138/1f2937/ffffff?text=N/A';">
+                            <div class="flex-grow">
+                                <p class="font-semibold">${title}</p>
+                                <p class="text-sm text-[color:var(--text-secondary)]">${year}</p>
+                            </div>
+                            <button class="select-new-tmdb-btn px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm" data-new-id="${result.id}" data-old-id="${oldId}" data-type="${type}">
+                                Select
+                            </button>
+                        </div>
+                    `;
+              })
+              .join("");
+          } catch (error) {
+            resultsContainer.innerHTML = `<p class="text-center text-red-400">Error during search: ${error.message}</p>`;
+          }
+        }
+
         async function showDetails(itemId, itemType) {
           showModal();
           modalContent.innerHTML = `<div class="flex justify-center items-center h-96"><div class="loader"></div></div>`;
           const dbKey = `${itemType}-${itemId}`;
+          // The 'localFiles' variable is still useful for other parts of the function, like the play button.
           const localFiles = localFileDatabase[dbKey];
+
+          console.log(dbKey, localFiles);
 
           try {
             const item = await fetchFromTMDB(`${itemType}/${itemId}`, {
@@ -1827,53 +1884,63 @@
                 `</div>`;
             }
 
+            console.log(localFileDatabase[dbKey]);
+
             modalContent.innerHTML = `
-                        <div class="relative">
-                            <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
-                            <img src="${backdropPath}" class="w-full h-48 md:h-80 object-cover" onerror="this.style.display='none'">
-                            <div class="absolute inset-0 bg-gradient-to-t from-[color:var(--bg-secondary)] via-[color:var(--bg-secondary)]/70 to-transparent"></div>
+                <div class="relative">
+                    <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
+                    <img src="${backdropPath}" class="w-full h-48 md:h-80 object-cover" onerror="this.style.display='none'">
+                    <div class="absolute inset-0 bg-gradient-to-t from-[color:var(--bg-secondary)] via-[color:var(--bg-secondary)]/70 to-transparent"></div>
+                </div>
+
+                <div id="details-view" class="p-6 space-y-6 -mt-24 relative">
+                    <div class="flex flex-col md:flex-row gap-6">
+                        <img src="${posterPath}" class="w-1/3 max-w-[200px] h-auto rounded-lg shadow-2xl self-center md:self-start" onerror="this.onerror=null;this.src='https://placehold.co/400x600/1f2937/ffffff?text=No+Image';">
+                        <div class="flex-1 pt-8">
+                            <h2 class="text-3xl lg:text-4xl font-bold text-[color:var(--text-primary)]">${title}</h2>
+                            <div class="flex items-center gap-4 mt-2 text-[color:var(--text-secondary)]">
+                                <span>${(item.release_date || item.first_air_date || "").substring(0, 4)}</span>
+                                <span class="flex items-center gap-1"><i data-lucide="star" class="w-4 h-4 text-yellow-400 fill-current"></i> ${item.vote_average.toFixed(1)}</span>
+                                ${item.number_of_seasons ? `<span>${item.number_of_seasons} Seasons</span>` : ""}
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-4">
+                                ${item.genres.map((g) => `<span class="px-3 py-1 text-xs rounded-full bg-[color:var(--bg-tertiary)]">${g.name}</span>`).join("")}
+                            </div>
+                            ${localFiles && itemType === "movie" ? `<button class="play-movie-btn mt-4 w-full px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}">Play Movie</button>` : ""}
                         </div>
-                        <div class="p-6 space-y-6 -mt-24 relative">
-                            <div class="flex flex-col md:flex-row gap-6">
-                                <img src="${posterPath}" class="w-1/3 max-w-[200px] h-auto rounded-lg shadow-2xl self-center md:self-start" onerror="this.onerror=null;this.src='https://placehold.co/400x600/1f2937/ffffff?text=No+Image';">
-                                <div class="flex-1 pt-8">
-                                    <h2 class="text-3xl lg:text-4xl font-bold text-[color:var(--text-primary)]">${title}</h2>
-                                    <div class="flex items-center gap-4 mt-2 text-[color:var(--text-secondary)]">
-                                        <span>${(item.release_date || item.first_air_date || "").substring(0, 4)}</span>
-                                        <span class="flex items-center gap-1"><i data-lucide="star" class="w-4 h-4 text-yellow-400 fill-current"></i> ${item.vote_average.toFixed(1)}</span>
-                                        ${item.number_of_seasons ? `<span>${item.number_of_seasons} Seasons</span>` : ""}
-                                    </div>
-                                    <div class="flex flex-wrap gap-2 mt-4">
-                                        ${item.genres.map((g) => `<span class="px-3 py-1 text-xs rounded-full bg-[color:var(--bg-tertiary)]">${g.name}</span>`).join("")}
-                                    </div>
-                                    ${localFiles && itemType === "movie" ? `<button class="play-movie-btn mt-4 w-full px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}">Play Movie</button>` : ""}
+                    </div>
 
-                                </div>
-                            </div>
+                    <div>
+                        <h3 class="font-semibold text-lg mb-2">Overview</h3>
+                        <p class="text-[color:var(--text-secondary)] leading-relaxed">${item.overview}</p>
+                        <div id="ai-synopsis-area" class="mt-4"></div>
+                        ${seasonsHTML}
+                    </div>
 
-                            <div>
-                                <h3 class="font-semibold text-lg mb-2">Overview</h3>
-                                <p class="text-[color:var(--text-secondary)] leading-relaxed">${item.overview}</p>
-                                <div id="ai-synopsis-area" class="mt-4"></div>
-                                ${seasonsHTML}
-                            </div>
+                    <div class="flex flex-wrap gap-4">
+                        <button id="ai-synopsis-btn" class="flex-1 px-4 py-2 rounded-lg bg-[color:var(--accent-secondary)] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait">✨ Get AI Synopsis</button>
+                        ${
+                          /* CORRECTED LOGIC: Check the database directly at the moment of rendering. */
+                          localFileDatabase[`${itemType}-${item.id}`]
+                            ? `<button id="change-tmdb-btn" data-id="${item.id}" data-type="${itemType}" data-title="${title.replace(/"/g, "&quot;")}" class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:opacity-90 transition-opacity">🔄 Change TMDB Match</button>`
+                            : ""
+                        }
+                    </div>
 
-                            <div class="flex flex-wrap gap-4">
-                                <button id="ai-synopsis-btn" class="flex-1 px-4 py-2 rounded-lg bg-[color:var(--accent-secondary)] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait">✨ Get AI Synopsis</button>
-                            </div>
-
-                            <div id="similar-section" class="pt-6 border-t border-[color:var(--border-color)]">
-                                ${
-                                  item.recommendations?.results.length > 0
-                                    ? `
-                                    <h3 class="font-semibold text-lg mb-4">Similar Titles</h3>
-                                    <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results.slice(0, 6).map(createMediaCard).join("")}</div>
-                                `
-                                    : `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
-                                }
-                            </div>
-                        </div>
-                    `;
+                    <div id="similar-section" class="pt-6 border-t border-[color:var(--border-color)]">
+                        ${
+                          item.recommendations?.results.length > 0
+                            ? `
+                            <h3 class="font-semibold text-lg mb-4">Similar Titles</h3>
+                            <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results.slice(0, 6).map(createMediaCard).join("")}</div>
+                        `
+                            : `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
+                        }
+                    </div>
+                </div>
+                <div id="tmdb-change-interface" class="hidden p-6 space-y-4">
+                    </div>
+            `;
             lucide.createIcons();
           } catch (error) {
             console.error(
@@ -2332,6 +2399,7 @@
             if (card) {
               showDetails(card.dataset.id, card.dataset.type);
             }
+            return;
           }
 
           // AI Synopsis button in modal
@@ -2352,6 +2420,122 @@
             } finally {
               aiBtn.style.display = "none";
             }
+            return;
+          }
+
+          // Change TMDB Match button
+          const changeTmdbBtn = e.target.closest("#change-tmdb-btn");
+          if (changeTmdbBtn) {
+            const itemId = changeTmdbBtn.dataset.id;
+            const itemType = changeTmdbBtn.dataset.type;
+            const itemTitle = changeTmdbBtn.dataset.title;
+
+            const detailsView = document.getElementById("details-view");
+            const changeInterfaceDiv = document.getElementById(
+              "tmdb-change-interface",
+            );
+
+            detailsView.classList.add("hidden");
+            changeInterfaceDiv.classList.remove("hidden");
+
+            changeInterfaceDiv.innerHTML = `
+                  <h3 class="text-xl font-bold">Change TMDB Match for "${itemTitle}"</h3>
+                  <p class="text-sm text-[color:var(--text-secondary)]">Search for the correct title below. The current entry will be replaced.</p>
+                  <div class="relative flex gap-2">
+                      <input type="text" id="tmdb-change-search-input" placeholder="Search for new title..." class="search-input w-full pl-4 pr-4 py-2 rounded-lg text-base">
+                      <button id="tmdb-change-search-btn" data-old-id="${itemId}" data-type="${itemType}" class="px-4 py-2 rounded-lg bg-[color:var(--accent-primary)] text-white font-semibold">Search</button>
+                  </div>
+                  <div id="tmdb-change-results" class="mt-4 max-h-96 overflow-y-auto space-y-2 p-1">
+                      </div>
+                  <button id="cancel-tmdb-change-btn" class="mt-4 w-full px-4 py-2 rounded-lg bg-[color:var(--bg-tertiary)] hover:bg-[color:var(--border-color)] text-white font-semibold">Cancel</button>
+              `;
+            document.getElementById("tmdb-change-search-input").focus();
+            return;
+          }
+
+          // Search button within the change TMDB interface
+          const tmdbChangeSearchBtn = e.target.closest(
+            "#tmdb-change-search-btn",
+          );
+          if (tmdbChangeSearchBtn) {
+            const query = document
+              .getElementById("tmdb-change-search-input")
+              .value.trim();
+            if (query) {
+              performTmdbChangeSearch(
+                query,
+                tmdbChangeSearchBtn.dataset.type,
+                tmdbChangeSearchBtn.dataset.oldId,
+              );
+            }
+            return;
+          }
+
+          // Cancel button within the change TMDB interface
+          const cancelChangeBtn = e.target.closest("#cancel-tmdb-change-btn");
+          if (cancelChangeBtn) {
+            const detailsView = document.getElementById("details-view");
+            const changeInterfaceDiv = document.getElementById(
+              "tmdb-change-interface",
+            );
+            changeInterfaceDiv.classList.add("hidden");
+            detailsView.classList.remove("hidden");
+            changeInterfaceDiv.innerHTML = ""; // Clean up
+            return;
+          }
+
+          // Select button for a new TMDB entry
+          const selectNewTmdbBtn = e.target.closest(".select-new-tmdb-btn");
+          if (selectNewTmdbBtn) {
+            selectNewTmdbBtn.disabled = true;
+            selectNewTmdbBtn.innerHTML =
+              '<div class="loader-small mx-auto"></div>';
+
+            const newId = selectNewTmdbBtn.dataset.newId;
+            const oldId = selectNewTmdbBtn.dataset.oldId;
+            const type = selectNewTmdbBtn.dataset.type;
+
+            try {
+              const newItemData = await fetchFromTMDB(`${type}/${newId}`);
+              const localArray = type === "movie" ? localMovies : localSeries;
+              const oldItemIndex = localArray.findIndex(
+                (item) => item.id == oldId,
+              );
+
+              if (oldItemIndex === -1) {
+                throw new Error(
+                  "Could not find the old item in the local library to replace.",
+                );
+              }
+
+              const oldDbKey = `${type}-${oldId}`;
+              const newDbKey = `${type}-${newId}`;
+              if (localFileDatabase[oldDbKey]) {
+                localFileDatabase[newDbKey] = localFileDatabase[oldDbKey];
+                delete localFileDatabase[oldDbKey];
+              }
+
+              localArray.splice(oldItemIndex, 1, newItemData);
+
+              const storageData = {
+                movies: localMovies,
+                series: localSeries,
+              };
+              await fetch("/api/add-media", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(storageData),
+              });
+
+              await showDetails(newId, type);
+              renderLocalMedia();
+              loadAllContent();
+            } catch (error) {
+              console.error("Failed to change TMDB entry:", error);
+              alert(`Error: ${error.message}`);
+              await showDetails(oldId, type); // Revert to old view on failure
+            }
+            return;
           }
 
           // Accordion toggle
