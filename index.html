@@ -629,25 +629,6 @@
                 </div>
               </div>
 
-              <div
-                id="vserve-instructions"
-                class="mb-6 p-4 rounded-lg bg-[color:var(--bg-tertiary)] border border-[color:var(--border-color)] flex items-start gap-4"
-              >
-                <i
-                  data-lucide="info"
-                  class="w-6 h-6 text-[color:var(--accent-primary)] mt-1 flex-shrink-0"
-                ></i>
-                <div class="flex-grow">
-                  <p class="text-sm font-semibold mb-2">
-                    Welcome to your local media library!
-                  </p>
-                  <p class="text-sm">
-                    Here you can manage your local media files and add them to
-                    your library. Simply select the folder containing your media
-                    files and click "Import".
-                  </p>
-                </div>
-              </div>
               <div id="local-status" class="mb-6"></div>
 
               <div
@@ -672,6 +653,22 @@
                 >
                   Series
                 </button>
+              </div>
+              <div class="flex items-center gap-2">
+                <label
+                  for="local-library-sort-by"
+                  class="text-sm font-medium text-[color:var(--text-secondary)]"
+                  >Sort By:</label
+                >
+                <select
+                  id="local-library-sort-by"
+                  class="search-input py-2 px-3 rounded-md text-sm"
+                >
+                  <option value="popularity.desc">Popularity</option>
+                  <option value="vote_average.desc">Rating</option>
+                  <option value="release_date.desc">Release Date</option>
+                  <option value="title.asc">Title (A-Z)</option>
+                </select>
               </div>
 
               <div
@@ -2143,8 +2140,11 @@
             mediaToRender = localSeries;
           }
 
-          if (mediaToRender.length > 0) {
-            localMediaGrid.innerHTML = mediaToRender
+          const sortBy = document.getElementById("local-library-sort-by").value;
+          const sortedMedia = sortLocalMedia(mediaToRender, sortBy);
+
+          if (sortedMedia.length > 0) {
+            localMediaGrid.innerHTML = sortedMedia
               .map(createMediaCard)
               .join("");
           } else {
@@ -2165,6 +2165,10 @@
                 return dateB - dateA;
               case "vote_average.desc":
                 return b.vote_average - a.vote_average;
+              case "title.asc":
+                const titleA = a.title || a.name || "";
+                const titleB = b.title || b.name || "";
+                return titleA.localeCompare(titleB);
               case "popularity.desc":
               default:
                 return b.popularity - a.popularity;
@@ -2298,6 +2302,9 @@
           const seriesInLibraryBtn = document.getElementById(
             "series-in-library-filter",
           );
+          const localLibrarySortBy = document.getElementById(
+            "local-library-sort-by",
+          );
 
           movieControls.addEventListener("change", (e) => {
             if (e.target.matches("select")) {
@@ -2320,6 +2327,7 @@
             seriesInLibraryBtn.dataset.active = !isActive;
             loadSeriesPage();
           });
+          localLibrarySortBy.addEventListener("change", renderLocalMedia);
         }
 
         // --- VIDEO PLAYER HANDLING (REVISED for vserve) ---
