@@ -45,9 +45,7 @@ async fn main() {
         // Main Application
         .route("/public/js/app.js", get(web_servers::serve_app))
         // CSS
-        .route("/public/css/style.css", get(web_servers::serve_style))
-        // Test page
-        .route("/test", get(web_servers::serve_test_modules));
+        .route("/public/css/style.css", get(web_servers::serve_style);
 
     let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

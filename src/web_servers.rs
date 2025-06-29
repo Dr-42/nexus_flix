@@ -148,12 +148,3 @@ pub async fn serve_style() -> impl IntoResponse {
         .body(Body::new(index_text.to_string()))
         .unwrap()
 }
-
-pub async fn serve_test_modules() -> impl IntoResponse {
-    let html_text = include_str!("../test_modules.html");
-    Response::builder()
-        .status(200)
-        .header(header::CONTENT_TYPE, "text/html")
-        .body(Body::new(html_text.to_string()))
-        .unwrap()
-}
