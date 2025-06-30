@@ -208,7 +208,7 @@ export class ModalManager {
 
     const videoEl = document.createElement("video");
     videoEl.id = "video-player";
-    videoEl.className = "video-js vjs-big-play-centered";
+    videoEl.className = "video-js vjs-midnight-skin vjs-big-play-centered";
     videoEl.style.width = "100%";
     videoEl.style.height = "100%";
 

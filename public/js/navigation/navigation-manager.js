@@ -13,7 +13,6 @@ export class NavigationManager {
     
     this.setupNavigationListeners();
     this.setupMobileMenu();
-    this.setupThemeSwitcher();
   }
 
   setupNavigationListeners() {
@@ -57,33 +56,6 @@ export class NavigationManager {
     this.menuToggle.addEventListener("click", () => {
       this.sidebar.classList.toggle("-translate-x-full");
     });
-  }
-
-  setupThemeSwitcher() {
-    const themeSwitcher = document.getElementById("theme-switcher");
-    const themeButtons = themeSwitcher.querySelectorAll(".theme-switch-btn");
-    const appContainer = document.getElementById("app-container");
-    const glassBg = document.getElementById("glass-bg-element");
-    const themes = ["theme-base", "theme-material", "theme-glass"];
-
-    themeSwitcher.addEventListener("click", (e) => {
-      if (e.target.matches("[data-theme]")) {
-        const selectedTheme = e.target.dataset.theme;
-        themes.forEach((theme) => appContainer.classList.remove(theme));
-        appContainer.classList.add(selectedTheme);
-        themeButtons.forEach((btn) => btn.classList.remove("active"));
-        e.target.classList.add("active");
-        glassBg.classList.toggle("hidden", selectedTheme !== "theme-glass");
-        
-        if (selectedTheme === "theme-glass") {
-          const randomImageUrl = `https://source.unsplash.com/random/1920x1080/?abstract,gradient,${Date.now()}`;
-          glassBg.style.backgroundImage = `url('${randomImageUrl}')`;
-        }
-      }
-    });
-
-    // Set default theme
-    themeButtons[0]?.classList.add("active");
   }
 
   getCurrentPage() {

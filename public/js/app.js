@@ -1,12 +1,14 @@
-import { TMDBApi } from './api/tmdb-api.js';
-import { GeminiApi } from './api/gemini-api.js';
-import { MediaCardRenderer } from './ui/media-cards.js';
-import { SearchHandler } from './ui/search-handler.js';
-import { ModalManager } from './ui/modal-manager.js';
-import { LocalLibraryManager } from './library/local-library-manager.js';
-import { PageManager } from './pages/page-manager.js';
-import { NavigationManager } from './navigation/navigation-manager.js';
-import { EventHandler } from './events/event-handler.js';
+import { TMDBApi } from "./api/tmdb-api.js";
+import { GeminiApi } from "./api/gemini-api.js";
+import { MediaCardRenderer } from "./ui/media-cards.js";
+import { SearchHandler } from "./ui/search-handler.js";
+import { ModalManager } from "./ui/modal-manager.js";
+import { LocalLibraryManager } from "./library/local-library-manager.js";
+import { PageManager } from "./pages/page-manager.js";
+import { NavigationManager } from "./navigation/navigation-manager.js";
+import { EventHandler } from "./events/event-handler.js";
+import { GlobalSettingsModal } from "./ui/global-settings-modal.js";
+import { themeManager } from "./themes/theme-manager.js";
 
 /**
  * Main application entry point
@@ -40,6 +42,7 @@ export class MediaStreamingApp {
     this.pageManager = null;
     this.navigationManager = null;
     this.eventHandler = null;
+    this.globalSettingsModal = null;
   }
 
   async initialize() {
@@ -59,8 +62,8 @@ export class MediaStreamingApp {
 
       // Initialize UI components
       this.mediaCardRenderer = new MediaCardRenderer(
-        this.tmdbApi, 
-        this.localLibraryManager.getLocalFileDatabase()
+        this.tmdbApi,
+        this.localLibraryManager.getLocalFileDatabase(),
       );
 
       // Update local library manager with media card renderer
@@ -70,32 +73,38 @@ export class MediaStreamingApp {
         this.tmdbApi,
         this.mediaCardRenderer,
         this.localLibraryManager.getLocalMovies(),
-        this.localLibraryManager.getLocalSeries()
+        this.localLibraryManager.getLocalSeries(),
       );
 
       this.modalManager = new ModalManager(
         this.tmdbApi,
         this.geminiApi,
-        this.localLibraryManager.getLocalFileDatabase()
+        this.localLibraryManager.getLocalFileDatabase(),
       );
 
       this.pageManager = new PageManager(
         this.tmdbApi,
         this.mediaCardRenderer,
-        this.localLibraryManager
+        this.localLibraryManager,
       );
 
       this.navigationManager = new NavigationManager();
+
+      // Initialize global settings modal
+      this.globalSettingsModal = new GlobalSettingsModal();
 
       // Initialize event handling (must be last)
       this.eventHandler = new EventHandler(
         this.modalManager,
         this.localLibraryManager,
-        this.tmdbApi
+        this.tmdbApi,
       );
 
       // Setup cross-component communication
       this.setupEventListeners();
+      
+      // Setup global settings button
+      this.setupGlobalSettings();
 
       // Initialize page content
       await this.pageManager.initialize();
@@ -113,21 +122,39 @@ export class MediaStreamingApp {
 
   setupEventListeners() {
     // Listen for content reload events
-    document.addEventListener('contentReload', () => {
+    document.addEventListener("contentReload", () => {
       this.pageManager.loadAllContent();
     });
 
     // Update search handler when local library changes
-    document.addEventListener('localLibraryUpdated', () => {
+    document.addEventListener("localLibraryUpdated", () => {
       this.searchHandler.updateLocalData(
         this.localLibraryManager.getLocalMovies(),
-        this.localLibraryManager.getLocalSeries()
+        this.localLibraryManager.getLocalSeries(),
       );
     });
 
     // Update media card renderer when file database changes
-    document.addEventListener('filesDatabaseUpdated', () => {
-      this.mediaCardRenderer.localFileDatabase = this.localLibraryManager.getLocalFileDatabase();
+    document.addEventListener("filesDatabaseUpdated", () => {
+      this.mediaCardRenderer.localFileDatabase =
+        this.localLibraryManager.getLocalFileDatabase();
+    });
+  }
+
+  setupGlobalSettings() {
+    const settingsBtn = document.getElementById('global-settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', () => {
+        this.globalSettingsModal.show();
+      });
+    }
+
+    // Add keyboard shortcut for global settings
+    document.addEventListener('keydown', (e) => {
+      if (e.ctrlKey && e.key === ',') { // Ctrl+, (common settings shortcut)
+        e.preventDefault();
+        this.globalSettingsModal.show();
+      }
     });
   }
 
@@ -154,3 +181,4 @@ document.addEventListener("DOMContentLoaded", async () => {
   const app = new MediaStreamingApp();
   await app.initialize();
 });
+
