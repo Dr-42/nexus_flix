@@ -30,9 +30,26 @@ export class ModalManager {
     });
 
     // Video player modal close
-    this.videoCloseBtn.addEventListener("click", () => this.hideVideoPlayer());
+    if (this.videoCloseBtn) {
+      this.videoCloseBtn.addEventListener("click", (e) => {
+        console.log('Close button clicked');
+        e.preventDefault();
+        e.stopPropagation();
+        this.hideVideoPlayer();
+      });
+    } else {
+      console.warn('Video close button not found');
+    }
+    
     this.videoPlayerModal.addEventListener("click", (e) => {
       if (e.target === this.videoPlayerModal) {
+        this.hideVideoPlayer();
+      }
+    });
+
+    // Add keyboard shortcut to close video player
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.videoPlayerModal.classList.contains("visible")) {
         this.hideVideoPlayer();
       }
     });
@@ -214,6 +231,21 @@ export class ModalManager {
 
     this.videoPlayerContent.insertBefore(videoEl, this.videoErrorOverlay);
     this.videoPlayerModal.classList.add("visible");
+
+    // Ensure close button is working by re-adding event listener
+    setTimeout(() => {
+      const closeBtn = document.getElementById("video-close-btn");
+      if (closeBtn) {
+        // Remove any existing listeners and add a new one
+        closeBtn.onclick = (e) => {
+          console.log('Close button clicked via onclick');
+          e.preventDefault();
+          e.stopPropagation();
+          this.hideVideoPlayer();
+        };
+        console.log('Close button event listener re-added');
+      }
+    }, 100);
 
     try {
       console.log("filePath:", filePath);

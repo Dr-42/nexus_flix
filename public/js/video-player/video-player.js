@@ -1,6 +1,7 @@
 import { VideoMetadata } from './video-metadata.js';
 import { VideoResponseParser } from './video-response-parser.js';
 import { WebVTTParser } from './webvtt-parser.js';
+import { SettingsModal } from '../ui/settings-modal.js';
 
 /**
  * Custom Video Player with MediaSource API integration
@@ -97,6 +98,7 @@ export class VideoPlayer {
     });
 
     this.setupAudioTracks();
+    this.setupSettingsModal();
   }
 
   handleHotkeys(event) {
@@ -178,8 +180,69 @@ export class VideoPlayer {
           this.switchSubtitleTrackByIndex(1);
         }
         break;
+      case "t":
+        // T: Open theme settings
+        event.preventDefault();
+        if (this.settingsModal) {
+          this.settingsModal.show();
+        }
+        break;
       default:
         break;
+    }
+  }
+
+  setupSettingsModal() {
+    // Create the settings modal
+    this.settingsModal = new SettingsModal(this.player);
+    
+    // Add a floating settings button that's always visible
+    const settingsButton = document.createElement('button');
+    settingsButton.className = 'vjs-floating-settings-btn';
+    settingsButton.innerHTML = 'Themes';
+    settingsButton.title = 'Video Player Themes (Press T)';
+    
+    // Style the button
+    Object.assign(settingsButton.style, {
+      position: 'absolute',
+      top: '15px',
+      left: '15px',
+      zIndex: '1000',
+      background: 'rgba(0, 0, 0, 0.8)',
+      color: 'white',
+      border: '1px solid rgba(255, 255, 255, 0.3)',
+      padding: '8px 12px',
+      borderRadius: '6px',
+      cursor: 'pointer',
+      fontSize: '12px',
+      fontFamily: 'inherit',
+      fontWeight: '500',
+      transition: 'all 0.2s ease'
+    });
+    
+    // Add hover effect
+    settingsButton.addEventListener('mouseenter', () => {
+      settingsButton.style.background = 'rgba(0, 0, 0, 0.9)';
+      settingsButton.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+    });
+    
+    settingsButton.addEventListener('mouseleave', () => {
+      settingsButton.style.background = 'rgba(0, 0, 0, 0.8)';
+      settingsButton.style.borderColor = 'rgba(255, 255, 255, 0.3)';
+    });
+    
+    settingsButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.settingsModal.show();
+    });
+    
+    // Add to the video player container
+    const playerContainer = this.player.el().parentElement || this.player.el();
+    if (playerContainer) {
+      playerContainer.style.position = 'relative';
+      playerContainer.appendChild(settingsButton);
+      console.log('Settings button added to video player');
     }
   }
 
