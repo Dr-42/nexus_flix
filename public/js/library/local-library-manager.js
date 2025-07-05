@@ -324,9 +324,9 @@ export class LocalLibraryManager {
 
   // Update methods for external modifications
   updateLocalData(movies, series, fileDatabase) {
-    this.localMovies = movies || this.localMovies;
-    this.localSeries = series || this.localSeries;
-    this.localFileDatabase = fileDatabase || this.localFileDatabase;
+    if (movies) this.localMovies = [...movies];
+    if (series) this.localSeries = [...series];
+    if (fileDatabase) this.localFileDatabase = { ...fileDatabase };
   }
 }
 

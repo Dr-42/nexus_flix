@@ -136,6 +136,7 @@ export class ModalManager {
   }
 
   generateModalHTML(item, title, backdropPath, posterPath, localFiles, itemType, seasonsHTML) {
+    const trailer = item.videos?.results.find(video => video.type === 'Trailer' && video.site === 'YouTube');
     return `
       <div class="relative">
         <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
@@ -166,6 +167,21 @@ export class ModalManager {
           <div id="ai-synopsis-area" class="mt-4"></div>
           ${seasonsHTML}
         </div>
+
+        ${trailer ? `
+        <div class="pt-6 border-t border-[color:var(--border-color)]">
+            <h3 class="font-semibold text-lg mb-4">Trailer</h3>
+            <div class="aspect-video">
+                <iframe 
+                    src="https://www.youtube.com/embed/${trailer.key}" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen
+                    class="w-full h-full rounded-lg"
+                ></iframe>
+            </div>
+        </div>
+        ` : ''}
 
         <div class="flex flex-wrap gap-4">
           <button id="ai-synopsis-btn" class="flex-1 px-4 py-2 rounded-lg bg-[color:var(--accent-secondary)] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait">AI Synopsis</button>
