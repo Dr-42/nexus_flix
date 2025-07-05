@@ -1,15 +1,36 @@
 use axum::{
     routing::{get, post},
-    Router,
+    Json, Router,
 };
+use serde::Serialize;
+use std::env;
 use std::env::args;
 
 mod api_servers;
 mod video_servers;
 mod web_servers;
 
+#[derive(Serialize)]
+struct ApiKeys {
+    tmdb_api_key: String,
+    gemini_api_key: String,
+}
+
+async fn get_api_keys() -> Json<ApiKeys> {
+    let tmdb_api_key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY must be set");
+    let gemini_api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
+
+    let keys = ApiKeys {
+        tmdb_api_key,
+        gemini_api_key,
+    };
+
+    Json(keys)
+}
+
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
     let port = if let Some(port) = args().nth(1) {
         port.parse().expect("Invalid port")
     } else {
@@ -22,6 +43,7 @@ async fn main() {
         .route("/file_list", get(video_servers::serve_file_list))
         .route("/api/add-media", post(api_servers::add_media))
         .route("/api/get-media", get(api_servers::get_media))
+        .route("/api/keys", get(get_api_keys))
         // Video Player Components
         .route(
             "/public/js/video-player/webvtt-parser.js",

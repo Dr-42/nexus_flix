@@ -10,18 +10,7 @@ import { EventHandler } from "./events/event-handler.js";
 import { GlobalSettingsModal } from "./ui/global-settings-modal.js";
 import { themeManager } from "./themes/theme-manager.js";
 
-/**
- * Main application entry point
- * Initializes all modules and coordinates the application
- */
 
-// Configuration constants
-const CONFIG = {
-  TMDB_API_KEY: "cc0737ab5aa6d04d148832d81e90c36e", // IMPORTANT: Replace with your actual TMDB API key
-  TMDB_BASE_URL: "https://api.themoviedb.org/3",
-  TMDB_IMAGE_BASE_URL: "https://image.tmdb.org/t/p",
-  GEMINI_API_URL: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=`, // Gemini key is handled by the environment
-};
 
 // Global variables for backward compatibility (if needed by legacy code)
 let localMovies = [];
@@ -48,8 +37,8 @@ export class MediaStreamingApp {
   async initialize() {
     try {
       // Initialize API services
-      this.tmdbApi = new TMDBApi(CONFIG.TMDB_API_KEY, CONFIG.TMDB_BASE_URL);
-      this.geminiApi = new GeminiApi(CONFIG.GEMINI_API_URL);
+      this.tmdbApi = new TMDBApi();
+      this.geminiApi = new GeminiApi();
 
       // Initialize local library manager first (needed by other components)
       this.localLibraryManager = new LocalLibraryManager(this.tmdbApi);

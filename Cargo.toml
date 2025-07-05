@@ -15,3 +15,4 @@ walkdir = "2.5.0"
 infer = "0.19.0"
 directories = "6.0.0"
 tower-http = { version = "0.6.6", features = ["fs"] }
+dotenvy = "0.15.7"

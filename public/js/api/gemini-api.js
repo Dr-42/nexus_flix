@@ -2,8 +2,21 @@
  * Gemini AI API integration for generating content
  */
 export class GeminiApi {
-  constructor(apiUrl) {
-    this.apiUrl = apiUrl;
+  constructor() {
+    this.apiKey = null;
+    this.apiUrl = null;
+    this.fetchApiKeys();
+  }
+
+  async fetchApiKeys() {
+    try {
+      const response = await fetch("/api/keys");
+      const keys = await response.json();
+      this.apiKey = keys.gemini_api_key;
+      this.apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.apiKey}`;
+    } catch (error) {
+      console.error("Error fetching API keys:", error);
+    }
   }
 
   async callGeminiAPI(prompt) {
