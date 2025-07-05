@@ -27,7 +27,8 @@ pub struct Meta {
     overview: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     popularity: Option<f32>,
-    poster_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    poster_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     release_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,7 +50,7 @@ pub struct MetaData {
 }
 
 pub async fn add_media(media: Json<MetaData>) -> impl IntoResponse {
-    println!("{:?}", media);
+    println!("{media:?}");
     let data_path = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
     let data_dir = data_path.data_dir();
     if !data_dir.exists() {
