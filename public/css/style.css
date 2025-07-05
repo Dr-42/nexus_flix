@@ -255,6 +255,12 @@ body {
 .sidebar {
   background-color: var(--bg-secondary);
   border-right: 1px solid var(--border-color);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease-in-out;
+}
+
+.sidebar.open {
+  transform: translateX(0);
 }
 .nav-link {
   color: var(--text-secondary);

@@ -95,6 +95,9 @@ export class MediaStreamingApp {
       // Setup global settings button
       this.setupGlobalSettings();
 
+      // Setup sidebar toggle
+      this.setupSidebarToggle();
+
       // Initialize page content
       await this.pageManager.initialize();
 
@@ -106,6 +109,24 @@ export class MediaStreamingApp {
     } catch (error) {
       console.error("Failed to initialize application:", error);
       this.showInitializationError(error);
+    }
+  }
+
+  setupSidebarToggle() {
+    const menuToggle = document.getElementById('menu-toggle');
+    const sidebar = document.getElementById('sidebar');
+    if (menuToggle && sidebar) {
+      menuToggle.addEventListener('click', (event) => {
+        event.stopPropagation(); // Prevent this click from immediately closing the sidebar
+        sidebar.classList.toggle('open');
+      });
+
+      document.addEventListener('click', (event) => {
+        // Close sidebar if click is outside sidebar and not on the menu toggle
+        if (!sidebar.contains(event.target) && !menuToggle.contains(event.target) && sidebar.classList.contains('open')) {
+          sidebar.classList.remove('open');
+        }
+      });
     }
   }
 
