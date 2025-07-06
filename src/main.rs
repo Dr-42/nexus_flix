@@ -121,7 +121,7 @@ async fn main() {
         // CSS
         .route("/public/css/style.css", get(web_servers::serve_style));
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("0.0.0.0:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
     axum::serve(listener, app).await.unwrap();

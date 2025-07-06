@@ -29,7 +29,7 @@ pub struct VideoMetadata {
 }
 
 pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, String> {
-    println!("Input path: {}", input_path);
+    println!("Input path: {input_path}");
     let output = Command::new("ffprobe")
         .args(["-v", "quiet"])
         .args(["-print_format", "json"])
@@ -77,13 +77,13 @@ pub async fn get_video_metadata(input_path: &str) -> Result<VideoMetadata, Strin
                     label.as_str().unwrap().to_string()
                 } else {
                     match track_type {
-                        Tracktype::Audio => format!("Audio {}", track_id),
-                        Tracktype::Video => format!("Video {}", track_id),
-                        Tracktype::Subtitle(_) => format!("Subtitle {}", track_id),
+                        Tracktype::Audio => format!("Audio {track_id}"),
+                        Tracktype::Video => format!("Video {track_id}"),
+                        Tracktype::Subtitle(_) => format!("Subtitle {track_id}"),
                     }
                 }
             } else {
-                format!("Track {}", track_id)
+                format!("Track {track_id}")
             };
             if track_type == Tracktype::Subtitle(false) {
                 let sub_codec = stream["codec_name"].as_str().unwrap();
@@ -224,7 +224,7 @@ pub async fn get_video_data(
     let video_metadata = get_video_metadata(path).await?;
     let mut video_data = VideoResponse::default();
     let duration = duration.unwrap_or(10.0);
-    println!("Duration: {}", duration);
+    println!("Duration: {duration}");
     for track in &video_metadata.tracks {
         match track.kind {
             Tracktype::Video => {
@@ -292,7 +292,7 @@ async fn get_video(path: &str, start_timestamp: f64, duration: f64) -> Vec<u8> {
                         buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
                     }
                     Err(e) => {
-                        eprintln!("Failed to read FFmpeg stdout: {}", e);
+                        eprintln!("Failed to read FFmpeg stdout: {e}");
                     }
                 }
             }
@@ -320,7 +320,7 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-c:a", "libfdk_aac"])
             //.args(["-c:a", "libopus"])
             .args(["-ac", "2"])
-            .args(["-map", format!("0:a:{}", id).as_str()])
+            .args(["-map", format!("0:a:{id}").as_str()])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
             .args([
                 "-movflags",
@@ -345,7 +345,7 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
                         buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
                     }
                     Err(e) => {
-                        eprintln!("Failed to read FFmpeg stdout: {}", e);
+                        eprintln!("Failed to read FFmpeg stdout: {e}");
                     }
                 }
             }
@@ -412,7 +412,7 @@ async fn get_subtitle(
                             buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
                         }
                         Err(e) => {
-                            eprintln!("Failed to read FFmpeg stdout: {}", e);
+                            eprintln!("Failed to read FFmpeg stdout: {e}");
                         }
                     }
                 }
@@ -438,7 +438,7 @@ async fn get_subtitle(
                 .args(["-i", &path])
                 .args(["-output_ts_offset", &start_timestamp.to_string()])
                 .args(["-t", &duration.to_string()])
-                .args(["-map", format!("0:s:{}", id).as_str()])
+                .args(["-map", format!("0:s:{id}").as_str()])
                 .args(["-c:s", "webvtt"])
                 .args(["-f", "webvtt"])
                 .args(["pipe:1"])
@@ -458,7 +458,7 @@ async fn get_subtitle(
                             buffer_writer.extend_from_slice(&read_buf[..bytes_read]);
                         }
                         Err(e) => {
-                            eprintln!("Failed to read FFmpeg stdout: {}", e);
+                            eprintln!("Failed to read FFmpeg stdout: {e}");
                         }
                     }
                 }

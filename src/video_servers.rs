@@ -30,7 +30,7 @@ pub async fn serve_video_metadata(Query(params): Query<VideoMetadataRequest>) ->
         Err(e) => Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header(header::CONTENT_TYPE, "text/plain")
-            .body(Body::new(format!("Video metadata error: {}", e)))
+            .body(Body::new(format!("Video metadata error: {e}")))
             .unwrap(),
         Ok(data) => Response::builder()
             .status(StatusCode::OK)
@@ -42,7 +42,7 @@ pub async fn serve_video_metadata(Query(params): Query<VideoMetadataRequest>) ->
 
 pub async fn serve_video(Query(params): Query<VideoRequest>) -> impl IntoResponse {
     let input_path = params.path;
-    println!("Input path: {}", input_path);
+    println!("Input path: {input_path}");
 
     let video_data = video_helpers::get_video_data(
         &input_path,
@@ -56,10 +56,10 @@ pub async fn serve_video(Query(params): Query<VideoRequest>) -> impl IntoRespons
             .body(Body::from(data.as_bytes().await))
             .unwrap(),
         Err(e) => {
-            println!("Video data error: {}", e);
+            println!("Video data error: {e}");
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from(format!("Video data error: {}", e)))
+                .body(Body::from(format!("Video data error: {e}")))
                 .unwrap()
         }
     }
