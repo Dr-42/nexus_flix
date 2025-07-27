@@ -1,4 +1,4 @@
-import { TMDBApi } from "./api/tmdb-api.js";
+import { BackendTMDBApi } from "./api/backend-tmdb-api.js";
 import { MediaCardRenderer } from "./ui/media-cards.js";
 import { SearchHandler } from "./ui/search-handler.js";
 import { ModalManager } from "./ui/modal-manager.js";
@@ -33,7 +33,7 @@ export class MediaStreamingApp {
   async initialize() {
     try {
       // Initialize API services
-      this.tmdbApi = new TMDBApi();
+      this.tmdbApi = new BackendTMDBApi();
 
       // Initialize local library manager first (needed by other components)
       this.localLibraryManager = new LocalLibraryManager(this.tmdbApi);

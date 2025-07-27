@@ -72,7 +72,7 @@ export class ModalManager {
     const localFiles = this.localFileDatabase[dbKey];
 
     try {
-      const item = await this.tmdbApi.fetchFromTMDB(`${itemType}/${itemId}`, {
+      const item = await this.tmdbApi.fetchFromBackend(`${itemType}/${itemId}`, {
         append_to_response: "credits,videos,recommendations",
       });
 
@@ -107,7 +107,7 @@ export class ModalManager {
   async generateSeasonsHTML(item, itemId, localFiles) {
     const seasonPromises = item.seasons
       .filter((s) => s.season_number > 0 && s.episode_count > 0) // Exclude "Specials" and empty seasons
-      .map((s) => this.tmdbApi.getTVSeason(itemId, s.season_number));
+      .map((s) => this.tmdbApi.fetchFromBackend(`tv/${itemId}/season/${s.season_number}`));
     const seasonsDetails = await Promise.all(seasonPromises);
 
     return (

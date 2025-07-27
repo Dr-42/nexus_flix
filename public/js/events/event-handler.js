@@ -113,7 +113,7 @@ export class EventHandler {
     resultsContainer.innerHTML = `<div class="flex justify-center items-center h-20"><div class="loader"></div></div>`;
 
     try {
-      const data = await this.tmdbApi.fetchFromTMDB(`search/${type}`, {
+      const data = await this.tmdbApi.fetchFromBackend(`search/${type}`, {
         query,
       });
       if (data.results.length === 0) {
@@ -169,7 +169,7 @@ export class EventHandler {
     const type = selectNewTmdbBtn.dataset.type;
 
     try {
-      const newItemData = await this.tmdbApi.fetchFromTMDB(`${type}/${newId}`);
+      const newItemData = await this.tmdbApi.fetchFromBackend(`${type}/${newId}`);
       const localMovies = this.localLibraryManager.getLocalMovies();
       const localSeries = this.localLibraryManager.getLocalSeries();
       const localFileDatabase = this.localLibraryManager.getLocalFileDatabase();

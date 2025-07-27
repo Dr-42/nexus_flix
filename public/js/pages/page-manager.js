@@ -143,8 +143,8 @@ export class PageManager {
   async fetchAndPopulateGenres() {
     try {
       const [movieGenresData, tvGenresData] = await Promise.all([
-        this.tmdbApi.getMovieGenres(),
-        this.tmdbApi.getTVGenres(),
+        this.tmdbApi.fetchFromBackend("genres/movie"),
+        this.tmdbApi.fetchFromBackend("genres/tv"),
       ]);
       this.movieGenres = movieGenresData.genres;
       this.tvGenres = tvGenresData.genres;

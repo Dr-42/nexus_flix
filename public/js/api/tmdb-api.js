@@ -1,25 +1,15 @@
 /**
  * TMDB API integration with rate limiting and error handling
+ * This is kept for backward compatibility but no longer used in the application
  */
 export class TMDBApi {
   constructor(baseUrl = "https://api.themoviedb.org/3") {
-    this.apiKey = null;
+    this.apiKey = "YOUR_TMDB_API_KEY_HERE";
     this.baseUrl = baseUrl;
     this.imageBaseUrl = "https://image.tmdb.org/t/p";
     this.apiQueue = [];
     this.isFetching = false;
     this.fetchDelay = 2; // ms between calls
-    this.fetchApiKeys();
-  }
-
-  async fetchApiKeys() {
-    try {
-      const response = await fetch("/api/keys");
-      const keys = await response.json();
-      this.apiKey = keys.tmdb_api_key;
-    } catch (error) {
-      console.error("Error fetching API keys:", error);
-    }
   }
 
   async processApiQueue() {

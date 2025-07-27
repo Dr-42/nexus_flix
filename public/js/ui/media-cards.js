@@ -55,7 +55,7 @@ export class MediaCardRenderer {
     grid.innerHTML = `<div class="grid-loader"><div class="loader"></div></div>`;
     
     try {
-      const data = await this.tmdbApi.fetchFromTMDB(endpoint, params);
+      const data = await this.tmdbApi.fetchFromBackend(endpoint, params);
       if (data.results.length === 0) {
         grid.innerHTML = `<p class="col-span-full text-[color:var(--text-secondary)]">No results found for the selected criteria.</p>`;
         return;

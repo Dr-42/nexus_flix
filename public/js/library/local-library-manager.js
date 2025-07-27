@@ -9,7 +9,7 @@ export class LocalLibraryManager {
     this.mediaCardRenderer = mediaCardRenderer;
     this.localMovies = [];
     this.localSeries = [];
-    this.localFileDatabase = {};
+    this.localFileDatabase = [];
     
     this.initializeElements();
     this.setupEventListeners();
@@ -183,7 +183,7 @@ export class LocalLibraryManager {
 
   async searchAndFetchFirstResult(query, type) {
     try {
-      const searchResults = await this.tmdbApi.fetchFromTMDB(`search/${type}`, { query });
+      const searchResults = await this.tmdbApi.fetchFromBackend(`search/${type}`, { query });
       if (searchResults.results && searchResults.results.length > 0) {
         return searchResults.results[0];
       }
