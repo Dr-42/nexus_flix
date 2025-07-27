@@ -1,23 +1,22 @@
-import { VideoPlayer } from '../video-player/video-player.js';
+import { VideoPlayer } from "../video-player/video-player.js";
 
 /**
  * Modal management for media details and video player
  */
 export class ModalManager {
-  constructor(tmdbApi, geminiApi, localFileDatabase) {
+  constructor(tmdbApi, localFileDatabase) {
     this.tmdbApi = tmdbApi;
-    this.geminiApi = geminiApi;
     this.localFileDatabase = localFileDatabase;
-    
+
     this.modal = document.getElementById("details-modal");
     this.modalContent = document.getElementById("modal-content");
     this.videoPlayerModal = document.getElementById("video-player-modal");
     this.videoPlayerContent = document.getElementById("video-player-content");
     this.videoCloseBtn = document.getElementById("video-close-btn");
     this.videoErrorOverlay = document.getElementById("video-error-overlay");
-    
+
     // Note: nexusPlayer is now a global variable for compatibility
-    
+
     this.initializeEventListeners();
   }
 
@@ -32,15 +31,15 @@ export class ModalManager {
     // Video player modal close
     if (this.videoCloseBtn) {
       this.videoCloseBtn.addEventListener("click", (e) => {
-        console.log('Close button clicked');
+        console.log("Close button clicked");
         e.preventDefault();
         e.stopPropagation();
         this.hideVideoPlayer();
       });
     } else {
-      console.warn('Video close button not found');
+      console.warn("Video close button not found");
     }
-    
+
     this.videoPlayerModal.addEventListener("click", (e) => {
       if (e.target === this.videoPlayerModal) {
         this.hideVideoPlayer();
@@ -49,7 +48,10 @@ export class ModalManager {
 
     // Add keyboard shortcut to close video player
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && this.videoPlayerModal.classList.contains("visible")) {
+      if (
+        e.key === "Escape" &&
+        this.videoPlayerModal.classList.contains("visible")
+      ) {
         this.hideVideoPlayer();
       }
     });
@@ -73,18 +75,28 @@ export class ModalManager {
       const item = await this.tmdbApi.fetchFromTMDB(`${itemType}/${itemId}`, {
         append_to_response: "credits,videos,recommendations",
       });
-      
+
       const title = item.title || item.name;
-      const backdropPath = this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
-      const posterPath = this.tmdbApi.getImageUrl(item.poster_path) || 
-                        this.tmdbApi.getPlaceholderImage();
+      const backdropPath =
+        this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
+      const posterPath =
+        this.tmdbApi.getImageUrl(item.poster_path) ||
+        this.tmdbApi.getPlaceholderImage();
 
       let seasonsHTML = "";
       if (itemType === "tv" && item.seasons) {
         seasonsHTML = await this.generateSeasonsHTML(item, itemId, localFiles);
       }
 
-      this.modalContent.innerHTML = this.generateModalHTML(item, title, backdropPath, posterPath, localFiles, itemType, seasonsHTML);
+      this.modalContent.innerHTML = this.generateModalHTML(
+        item,
+        title,
+        backdropPath,
+        posterPath,
+        localFiles,
+        itemType,
+        seasonsHTML,
+      );
       lucide.createIcons();
     } catch (error) {
       console.error(`Failed to load details for ${itemType}/${itemId}:`, error);
@@ -98,7 +110,8 @@ export class ModalManager {
       .map((s) => this.tmdbApi.getTVSeason(itemId, s.season_number));
     const seasonsDetails = await Promise.all(seasonPromises);
 
-    return `<div class="space-y-2 mt-4">` +
+    return (
+      `<div class="space-y-2 mt-4">` +
       seasonsDetails
         .map((season) => {
           if (!season || !season.episodes) return "";
@@ -113,7 +126,9 @@ export class ModalManager {
                   ${season.episodes
                     .map((ep) => {
                       const episodeFile = localFiles
-                        ? localFiles[`${season.season_number}-${ep.episode_number}`]
+                        ? localFiles[
+                            `${season.season_number}-${ep.episode_number}`
+                          ]
                         : null;
                       return `
                         <li class="p-2 flex justify-between items-center rounded-md hover:bg-black/20">
@@ -132,11 +147,22 @@ export class ModalManager {
           `;
         })
         .join("") +
-      `</div>`;
+      `</div>`
+    );
   }
 
-  generateModalHTML(item, title, backdropPath, posterPath, localFiles, itemType, seasonsHTML) {
-    const trailer = item.videos?.results.find(video => video.type === 'Trailer' && video.site === 'YouTube');
+  generateModalHTML(
+    item,
+    title,
+    backdropPath,
+    posterPath,
+    localFiles,
+    itemType,
+    seasonsHTML,
+  ) {
+    const trailer = item.videos?.results.find(
+      (video) => video.type === "Trailer" && video.site === "YouTube",
+    );
     return `
       <div class="relative">
         <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
@@ -164,11 +190,12 @@ export class ModalManager {
         <div>
           <h3 class="font-semibold text-lg mb-2">Overview</h3>
           <p class="text-[color:var(--text-secondary)] leading-relaxed">${item.overview}</p>
-          <div id="ai-synopsis-area" class="mt-4"></div>
           ${seasonsHTML}
         </div>
 
-        ${trailer ? `
+        ${
+          trailer
+            ? `
         <div class="pt-6 border-t border-[color:var(--border-color)]">
             <h3 class="font-semibold text-lg mb-4">Trailer</h3>
             <div class="aspect-video">
@@ -181,10 +208,11 @@ export class ModalManager {
                 ></iframe>
             </div>
         </div>
-        ` : ''}
+        `
+            : ""
+        }
 
         <div class="flex flex-wrap gap-4">
-          <button id="ai-synopsis-btn" class="flex-1 px-4 py-2 rounded-lg bg-[color:var(--accent-secondary)] text-white font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait">AI Synopsis</button>
           ${
             this.localFileDatabase[`${itemType}-${item.id}`]
               ? `<button id="change-tmdb-btn" data-id="${item.id}" data-type="${itemType}" data-title="${title.replace(/"/g, "&quot;")}" class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:opacity-90 transition-opacity">Change TMDB Match</button>`
@@ -197,7 +225,10 @@ export class ModalManager {
             item.recommendations?.results.length > 0
               ? `
                 <h3 class="font-semibold text-lg mb-4">Similar Titles</h3>
-                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results.slice(0, 6).map(rec => this.createMediaCard(rec)).join("")}</div>
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results
+                  .slice(0, 6)
+                  .map((rec) => this.createMediaCard(rec))
+                  .join("")}</div>
               `
               : `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
           }
@@ -210,8 +241,9 @@ export class ModalManager {
   createMediaCard(item) {
     // Simple media card for recommendations - could be extracted to MediaCardRenderer
     const title = item.title || item.name;
-    const posterPath = this.tmdbApi.getImageUrl(item.poster_path) || 
-                      this.tmdbApi.getPlaceholderImage();
+    const posterPath =
+      this.tmdbApi.getImageUrl(item.poster_path) ||
+      this.tmdbApi.getPlaceholderImage();
     const itemType = item.media_type || (item.title ? "movie" : "tv");
 
     return `
@@ -254,12 +286,12 @@ export class ModalManager {
       if (closeBtn) {
         // Remove any existing listeners and add a new one
         closeBtn.onclick = (e) => {
-          console.log('Close button clicked via onclick');
+          console.log("Close button clicked via onclick");
           e.preventDefault();
           e.stopPropagation();
           this.hideVideoPlayer();
         };
-        console.log('Close button event listener re-added');
+        console.log("Close button event listener re-added");
       }
     }, 100);
 
@@ -281,23 +313,4 @@ export class ModalManager {
       window.nexusPlayer = null;
     }
   }
-
-  async handleAISynopsis(title) {
-    const aiBtn = document.getElementById("ai-synopsis-btn");
-    if (!aiBtn || aiBtn.disabled) return;
-
-    aiBtn.disabled = true;
-    const area = document.getElementById("ai-synopsis-area");
-    area.innerHTML = `<div class="flex justify-center items-center h-20"><div class="loader"></div></div>`;
-
-    try {
-      const synopsis = await this.geminiApi.generateSynopsis(title);
-      area.innerHTML = `<h3 class="font-semibold text-lg mb-2 text-[color:var(--accent-primary)]">AI Synopsis</h3><p class="text-[color:var(--text-secondary)] leading-relaxed">${synopsis}</p>`;
-    } catch (error) {
-      area.innerHTML = `<div class="text-red-400">Failed to get AI synopsis. ${error.message}</div>`;
-    } finally {
-      aiBtn.style.display = "none";
-    }
-  }
 }
-

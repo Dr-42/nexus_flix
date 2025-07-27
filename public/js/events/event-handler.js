@@ -6,16 +6,16 @@ export class EventHandler {
     this.modalManager = modalManager;
     this.localLibraryManager = localLibraryManager;
     this.tmdbApi = tmdbApi;
-    
+
     this.setupGlobalEventListeners();
   }
 
   setupGlobalEventListeners() {
     document.body.addEventListener("click", (e) => this.handleGlobalClick(e));
-    
+
     // Listen for page changes
-    document.addEventListener('pageChanged', (e) => {
-      if (e.detail.page === 'local-library') {
+    document.addEventListener("pageChanged", (e) => {
+      if (e.detail.page === "local-library") {
         this.localLibraryManager.renderLocalMedia();
       }
     });
@@ -32,14 +32,6 @@ export class EventHandler {
       return;
     }
 
-    // AI Synopsis button in modal
-    const aiBtn = e.target.closest("#ai-synopsis-btn");
-    if (aiBtn && !aiBtn.disabled) {
-      const title = aiBtn.closest(".modal-content").querySelector("h2").textContent;
-      await this.modalManager.handleAISynopsis(title);
-      return;
-    }
-
     // Change TMDB Match button
     const changeTmdbBtn = e.target.closest("#change-tmdb-btn");
     if (changeTmdbBtn) {
@@ -50,7 +42,9 @@ export class EventHandler {
     // Search button within the change TMDB interface
     const tmdbChangeSearchBtn = e.target.closest("#tmdb-change-search-btn");
     if (tmdbChangeSearchBtn) {
-      const query = document.getElementById("tmdb-change-search-input").value.trim();
+      const query = document
+        .getElementById("tmdb-change-search-input")
+        .value.trim();
       if (query) {
         await this.performTmdbChangeSearch(
           query,
@@ -119,7 +113,9 @@ export class EventHandler {
     resultsContainer.innerHTML = `<div class="flex justify-center items-center h-20"><div class="loader"></div></div>`;
 
     try {
-      const data = await this.tmdbApi.fetchFromTMDB(`search/${type}`, { query });
+      const data = await this.tmdbApi.fetchFromTMDB(`search/${type}`, {
+        query,
+      });
       if (data.results.length === 0) {
         resultsContainer.innerHTML = `<p class="text-center text-[color:var(--text-secondary)]">No results found.</p>`;
         return;
@@ -128,9 +124,14 @@ export class EventHandler {
       resultsContainer.innerHTML = data.results
         .map((result) => {
           const title = result.title || result.name;
-          const year = (result.release_date || result.first_air_date || "").substring(0, 4);
-          const posterPath = this.tmdbApi.getImageUrl(result.poster_path, "w92") || 
-                            this.tmdbApi.getPlaceholderImage(92, 138, "N/A");
+          const year = (
+            result.release_date ||
+            result.first_air_date ||
+            ""
+          ).substring(0, 4);
+          const posterPath =
+            this.tmdbApi.getImageUrl(result.poster_path, "w92") ||
+            this.tmdbApi.getPlaceholderImage(92, 138, "N/A");
 
           return `
             <div class="flex items-center gap-4 p-2 rounded-lg bg-[color:var(--bg-tertiary)]">
@@ -172,12 +173,14 @@ export class EventHandler {
       const localMovies = this.localLibraryManager.getLocalMovies();
       const localSeries = this.localLibraryManager.getLocalSeries();
       const localFileDatabase = this.localLibraryManager.getLocalFileDatabase();
-      
+
       const localArray = type === "movie" ? localMovies : localSeries;
       const oldItemIndex = localArray.findIndex((item) => item.id == oldId);
 
       if (oldItemIndex === -1) {
-        throw new Error("Could not find the old item in the local library to replace.");
+        throw new Error(
+          "Could not find the old item in the local library to replace.",
+        );
       }
 
       const oldDbKey = `${type}-${oldId}`;
@@ -190,14 +193,18 @@ export class EventHandler {
       localArray.splice(oldItemIndex, 1, newItemData);
 
       // Update the local library manager
-      this.localLibraryManager.updateLocalData(localMovies, localSeries, localFileDatabase);
+      this.localLibraryManager.updateLocalData(
+        localMovies,
+        localSeries,
+        localFileDatabase,
+      );
       await this.localLibraryManager.saveToServer();
 
       await this.modalManager.showDetails(newId, type);
       this.localLibraryManager.renderLocalMedia();
-      
+
       // Trigger content reload
-      const event = new CustomEvent('contentReload');
+      const event = new CustomEvent("contentReload");
       document.dispatchEvent(event);
     } catch (error) {
       console.error("Failed to change TMDB entry:", error);
@@ -217,4 +224,3 @@ export class EventHandler {
     }
   }
 }
-

@@ -1,5 +1,4 @@
 import { TMDBApi } from "./api/tmdb-api.js";
-import { GeminiApi } from "./api/gemini-api.js";
 import { MediaCardRenderer } from "./ui/media-cards.js";
 import { SearchHandler } from "./ui/search-handler.js";
 import { ModalManager } from "./ui/modal-manager.js";
@@ -9,8 +8,6 @@ import { NavigationManager } from "./navigation/navigation-manager.js";
 import { EventHandler } from "./events/event-handler.js";
 import { GlobalSettingsModal } from "./ui/global-settings-modal.js";
 import { themeManager } from "./themes/theme-manager.js";
-
-
 
 // Global variables for backward compatibility (if needed by legacy code)
 let localMovies = [];
@@ -23,7 +20,6 @@ window.nexusPlayer = null;
 export class MediaStreamingApp {
   constructor() {
     this.tmdbApi = null;
-    this.geminiApi = null;
     this.mediaCardRenderer = null;
     this.searchHandler = null;
     this.modalManager = null;
@@ -38,7 +34,6 @@ export class MediaStreamingApp {
     try {
       // Initialize API services
       this.tmdbApi = new TMDBApi();
-      this.geminiApi = new GeminiApi();
 
       // Initialize local library manager first (needed by other components)
       this.localLibraryManager = new LocalLibraryManager(this.tmdbApi);
@@ -67,7 +62,6 @@ export class MediaStreamingApp {
 
       this.modalManager = new ModalManager(
         this.tmdbApi,
-        this.geminiApi,
         this.localLibraryManager.getLocalFileDatabase(),
       );
 
@@ -91,7 +85,7 @@ export class MediaStreamingApp {
 
       // Setup cross-component communication
       this.setupEventListeners();
-      
+
       // Setup global settings button
       this.setupGlobalSettings();
 
@@ -113,18 +107,22 @@ export class MediaStreamingApp {
   }
 
   setupSidebarToggle() {
-    const menuToggle = document.getElementById('menu-toggle');
-    const sidebar = document.getElementById('sidebar');
+    const menuToggle = document.getElementById("menu-toggle");
+    const sidebar = document.getElementById("sidebar");
     if (menuToggle && sidebar) {
-      menuToggle.addEventListener('click', (event) => {
+      menuToggle.addEventListener("click", (event) => {
         event.stopPropagation(); // Prevent this click from immediately closing the sidebar
-        sidebar.classList.toggle('open');
+        sidebar.classList.toggle("open");
       });
 
-      document.addEventListener('click', (event) => {
+      document.addEventListener("click", (event) => {
         // Close sidebar if click is outside sidebar and not on the menu toggle
-        if (!sidebar.contains(event.target) && !menuToggle.contains(event.target) && sidebar.classList.contains('open')) {
-          sidebar.classList.remove('open');
+        if (
+          !sidebar.contains(event.target) &&
+          !menuToggle.contains(event.target) &&
+          sidebar.classList.contains("open")
+        ) {
+          sidebar.classList.remove("open");
         }
       });
     }
@@ -152,16 +150,17 @@ export class MediaStreamingApp {
   }
 
   setupGlobalSettings() {
-    const settingsBtn = document.getElementById('global-settings-btn');
+    const settingsBtn = document.getElementById("global-settings-btn");
     if (settingsBtn) {
-      settingsBtn.addEventListener('click', () => {
+      settingsBtn.addEventListener("click", () => {
         this.globalSettingsModal.show();
       });
     }
 
     // Add keyboard shortcut for global settings
-    document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key === ',') { // Ctrl+, (common settings shortcut)
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === ",") {
+        // Ctrl+, (common settings shortcut)
         e.preventDefault();
         this.globalSettingsModal.show();
       }
@@ -191,4 +190,3 @@ document.addEventListener("DOMContentLoaded", async () => {
   const app = new MediaStreamingApp();
   await app.initialize();
 });
-

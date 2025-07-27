@@ -59,15 +59,6 @@ pub async fn serve_tmdb_api() -> impl IntoResponse {
         .unwrap()
 }
 
-pub async fn serve_gemini_api() -> impl IntoResponse {
-    let js_text = include_str!("../public/js/api/gemini-api.js");
-    Response::builder()
-        .status(200)
-        .header(header::CONTENT_TYPE, "application/javascript")
-        .body(Body::new(js_text.to_string()))
-        .unwrap()
-}
-
 pub async fn serve_media_cards() -> impl IntoResponse {
     let js_text = include_str!("../public/js/ui/media-cards.js");
     Response::builder()

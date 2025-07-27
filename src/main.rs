@@ -13,17 +13,12 @@ mod web_servers;
 #[derive(Serialize)]
 struct ApiKeys {
     tmdb_api_key: String,
-    gemini_api_key: String,
 }
 
 async fn get_api_keys() -> Json<ApiKeys> {
     let tmdb_api_key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY must be set");
-    let gemini_api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
 
-    let keys = ApiKeys {
-        tmdb_api_key,
-        gemini_api_key,
-    };
+    let keys = ApiKeys { tmdb_api_key };
 
     Json(keys)
 }
@@ -65,10 +60,6 @@ async fn main() {
         .route(
             "/public/js/api/tmdb-api.js",
             get(web_servers::serve_tmdb_api),
-        )
-        .route(
-            "/public/js/api/gemini-api.js",
-            get(web_servers::serve_gemini_api),
         )
         // UI Components
         .route(
