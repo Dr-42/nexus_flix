@@ -70,12 +70,28 @@ impl TmdbApi {
         id: &str,
         append_to_response: Option<&str>,
     ) -> Result<Value, reqwest::Error> {
-        let mut params = HashMap::new();
-        if let Some(append) = append_to_response {
-            params.insert("append_to_response".to_string(), append.to_string());
+        let data_dir = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
+        let data_path = data_dir.data_dir();
+        let metadata_folder = data_path.join("metadata");
+        if !metadata_folder.exists() {
+            std::fs::create_dir_all(&metadata_folder).unwrap();
         }
-        self.fetch_from_tmdb(&format!("movie/{}", id), Some(params))
-            .await
+        let metadata_file = metadata_folder.join(format!("movie_{}.json", id));
+        if metadata_file.exists() {
+            let json_data = std::fs::read_to_string(&metadata_file).unwrap();
+            let val: Value = serde_json::from_str(&json_data).unwrap();
+            Ok(val)
+        } else {
+            let mut params = HashMap::new();
+            if let Some(append) = append_to_response {
+                params.insert("append_to_response".to_string(), append.to_string());
+            }
+            let val = self.fetch_from_tmdb(&format!("movie/{}", id), Some(params))
+                .await?;
+            let json_data = serde_json::to_string_pretty(&val).unwrap();
+            std::fs::write(metadata_file, json_data).unwrap();
+            Ok(val)
+        }
     }
 
     pub async fn get_tv_details(
@@ -83,12 +99,30 @@ impl TmdbApi {
         id: &str,
         append_to_response: Option<&str>,
     ) -> Result<Value, reqwest::Error> {
-        let mut params = HashMap::new();
-        if let Some(append) = append_to_response {
-            params.insert("append_to_response".to_string(), append.to_string());
+        let data_dir = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
+        let data_path = data_dir.data_dir();
+        let metadata_folder = data_path.join("metadata");
+        if !metadata_folder.exists() {
+            std::fs::create_dir_all(&metadata_folder).unwrap();
         }
-        self.fetch_from_tmdb(&format!("tv/{}", id), Some(params))
-            .await
+
+        let metadata_file = metadata_folder.join(format!("tv_{}.json", id));
+        if metadata_file.exists() {
+            let json_data = std::fs::read_to_string(&metadata_file).unwrap();
+            let val: Value = serde_json::from_str(&json_data).unwrap();
+            Ok(val)
+        } else {
+            let mut params = HashMap::new();
+            if let Some(append) = append_to_response {
+                params.insert("append_to_response".to_string(), append.to_string());
+            }
+            let val = self
+                .fetch_from_tmdb(&format!("tv/{}", id), Some(params))
+                .await?;
+            let json_data = serde_json::to_string_pretty(&val).unwrap();
+            std::fs::write(metadata_file, json_data).unwrap();
+            Ok(val)
+        }
     }
 
     pub async fn get_tv_season(
@@ -157,18 +191,32 @@ impl TmdbApi {
         }
     }
 
-    pub async fn get_placeholder_image(&self, width: u32, height: u32, text: &str) -> Result<Vec<u8>, reqwest::Error> {
+    pub async fn get_placeholder_image(
+        &self,
+        width: u32,
+        height: u32,
+        text: &str,
+    ) -> Result<Vec<u8>, reqwest::Error> {
         let data_path = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
         let cache_dir = data_path.cache_dir();
         if !cache_dir.exists() {
             std::fs::create_dir_all(cache_dir).unwrap();
         }
 
-        let placeholder_path = format!("{}/placeholder_{}x{}_{}.png", cache_dir.display(), width, height, text.replace(" ", "-"));
+        let placeholder_path = format!(
+            "{}/placeholder_{}x{}_{}.png",
+            cache_dir.display(),
+            width,
+            height,
+            text.replace(" ", "-")
+        );
         if std::path::Path::new(&placeholder_path).exists() {
             Ok(std::fs::read(&placeholder_path).unwrap())
         } else {
-            let url = format!("https://via.placeholder.com/{}x{}?text={}", width, height, text);
+            let url = format!(
+                "https://via.placeholder.com/{}x{}?text={}",
+                width, height, text
+            );
             let response = self.client.get(&url).send().await?;
             let bytes = response.bytes().await?;
             std::fs::write(&placeholder_path, &bytes).unwrap();
@@ -176,4 +224,3 @@ impl TmdbApi {
         }
     }
 }
-
