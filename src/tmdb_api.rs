@@ -66,7 +66,9 @@ impl TmdbApi {
     pub async fn search_tv(&self, query: &str) -> Result<Value, reqwest::Error> {
         let mut params = HashMap::new();
         params.insert("query".to_string(), query.to_string());
-        self.fetch_from_tmdb("search/tv", Some(params)).await
+        let res = self.fetch_from_tmdb("search/tv", Some(params)).await;
+        println!("TV Search Result: {:?}", res);
+        res
     }
 
     pub async fn get_movie_details(
@@ -180,8 +182,46 @@ impl TmdbApi {
         tv_id: &str,
         season_number: &str,
     ) -> Result<Value, reqwest::Error> {
-        self.fetch_from_tmdb(&format!("tv/{}/season/{}", tv_id, season_number), None)
-            .await
+        let data_dir = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
+        let data_path = data_dir.data_dir();
+        let metadata_folder = data_path.join("metadata");
+        if !metadata_folder.exists() {
+            std::fs::create_dir_all(&metadata_folder).unwrap();
+        }
+
+        let metadata_file =
+            metadata_folder.join(format!("tv_{}_season_{}.json", tv_id, season_number));
+        if metadata_file.exists() {
+            let json_data_time = std::fs::metadata(&metadata_file)
+                .unwrap()
+                .modified()
+                .unwrap();
+            let age = std::time::SystemTime::now()
+                .duration_since(json_data_time)
+                .unwrap()
+                .as_secs();
+            // If the cached data is older than 7 days, refetch
+            if age > 7 * 24 * 60 * 60 {
+                println!("Refetching TV season metadata for ID: {}-{}", tv_id, season_number);
+                let val = self
+                    .fetch_from_tmdb(&format!("tv/{}/season/{}", tv_id, season_number), None)
+                    .await?;
+                let json_data = serde_json::to_string_pretty(&val).unwrap();
+                std::fs::write(metadata_file, json_data).unwrap();
+                Ok(val)
+            } else {
+                let json_data = std::fs::read_to_string(&metadata_file).unwrap();
+                let val: Value = serde_json::from_str(&json_data).unwrap();
+                Ok(val)
+            }
+        } else {
+            let val = self
+                .fetch_from_tmdb(&format!("tv/{}/season/{}", tv_id, season_number), None)
+                .await?;
+            let json_data = serde_json::to_string_pretty(&val).unwrap();
+            std::fs::write(metadata_file, json_data).unwrap();
+            Ok(val)
+        }
     }
 
     pub async fn get_movie_genres(&self) -> Result<Value, reqwest::Error> {
@@ -278,10 +318,12 @@ impl TmdbApi {
 // TMDB API routes
 pub async fn tmdb_search(
     Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path(media_type): axum::extract::Path<String>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     let query = params.get("query").unwrap_or(&String::new()).clone();
-    let media_type = params.get("type").unwrap_or(&"movie".to_string()).clone();
+
+    println!("Searching for query: {}, type: {}", query, media_type);
     
     let result = if media_type == "tv" {
         tmdb_api.search_tv(&query).await

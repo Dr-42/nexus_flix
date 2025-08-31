@@ -5,6 +5,7 @@
 export class BackendTMDBApi {
 	constructor() {
 		this.imageBaseUrl = "https://image.tmdb.org/t/p";
+		this.cache = new Map();
 	}
 
 	async fetchFromBackend(endpoint, params = {}) {
@@ -13,12 +14,19 @@ export class BackendTMDBApi {
 			url.searchParams.append(key, params[key]);
 		}
 
+		const cacheKey = url.toString();
+		if (this.cache.has(cacheKey)) {
+			return this.cache.get(cacheKey);
+		}
+
 		try {
 			const response = await fetch(url);
 			if (!response.ok) {
 				throw new Error(`Backend API Error (${response.status}): ${response.statusText}`);
 			}
-			return await response.json();
+			const data = await response.json();
+			this.cache.set(cacheKey, data);
+			return data;
 		} catch (error) {
 			console.error(`Backend API Error for endpoint ${endpoint}:`, error);
 			throw error;

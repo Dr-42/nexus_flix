@@ -57,7 +57,7 @@ async fn main() {
     // Placeholder image
     let app = add_route!(app, get, "/api/placeholder", tmdb_api::serve_placeholder_image);
     // TMDB API routes
-    let app = add_route!(app, get, "/api/tmdb/search", tmdb_api::tmdb_search);
+    let app = add_route!(app, get, "/api/tmdb/search/{media_type}", tmdb_api::tmdb_search);
     let app = add_route!(app, get, "/api/tmdb/{media_type}/{id}", tmdb_api::tmdb_details);
     let app = add_route!(app, get, "/api/tmdb/tv/{tv_id}/season/{season_number}", tmdb_api::tmdb_season);
     let app = add_route!(app, get, "/api/tmdb/genres/{media_type}", tmdb_api::tmdb_genres);

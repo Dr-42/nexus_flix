@@ -223,7 +223,7 @@ pub async fn get_video_data(
 ) -> Result<VideoResponse, String> {
     let video_metadata = get_video_metadata(path).await?;
     let mut video_data = VideoResponse::default();
-    let duration = duration.unwrap_or(10.0);
+    let duration = duration.unwrap_or(20.0);
     println!("Duration: {duration}");
     for track in &video_metadata.tracks {
         match track.kind {
