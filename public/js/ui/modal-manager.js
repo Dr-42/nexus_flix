@@ -783,7 +783,7 @@ export class ModalManager {
 		this.videoPlayerModal.classList.remove("visible");
 	}
 
-	handleWatchHistoryUpdate(event) {
+	async handleWatchHistoryUpdate(event) {
 		const { mediaId, watchHistory } = event.detail;
 		const progressBar = document.getElementById(`progress-${mediaId}`);
 		if (progressBar) {
@@ -794,31 +794,52 @@ export class ModalManager {
 		const parts = mediaId.split('-');
 		const itemType = parts[0];
 		const seriesId = parts[1];
-		const overallMediaId = `${itemType}-${seriesId}`;
 
+		if (itemType !== 'tv') {
+			return;
+		}
+
+		const overallMediaId = `${itemType}-${seriesId}`;
 		const overallProgressBar = document.getElementById(`progress-${overallMediaId}`);
 		const watchStatusEl = document.getElementById(`watch-status-${overallMediaId}`);
 
 		if (overallProgressBar && watchStatusEl) {
-			this.findLastWatchedEpisode(seriesId).then(lastWatched => {
-				if (lastWatched) {
-					const watchedPercentage = lastWatched.total_duration > 0 ? (lastWatched.watched_duration / lastWatched.total_duration) * 100 : 0;
-					overallProgressBar.style.width = `${watchedPercentage}%`;
+			const lastWatched = await this.findLastWatchedEpisode(seriesId);
+			if (lastWatched) {
+				const watchedPercentage = lastWatched.total_duration > 0 ? (lastWatched.watched_duration / lastWatched.total_duration) * 100 : 0;
+				overallProgressBar.style.width = `${watchedPercentage}%`;
 
-					const formatTime = (seconds) => {
-						const h = Math.floor(seconds / 3600);
-						const m = Math.floor((seconds % 3600) / 60);
-						const s = Math.floor(seconds % 60);
-						return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
-					};
+				const formatTime = (seconds) => {
+					const h = Math.floor(seconds / 3600);
+					const m = Math.floor((seconds % 3600) / 60);
+					const s = Math.floor(seconds % 60);
+					return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+				};
 
-					const timeStatus = `at ${formatTime(lastWatched.watched_duration)} of ${formatTime(lastWatched.total_duration)}`;
-					const parts = lastWatched.media_id.split('-');
-					const season = parts[2];
-					const episode = parts[3];
-					watchStatusEl.textContent = `Season ${season} Episode ${episode} ${timeStatus}`;
+				const timeStatus = `at ${formatTime(lastWatched.watched_duration)} of ${formatTime(lastWatched.total_duration)}`;
+				const lastWatchedParts = lastWatched.media_id.split('-');
+				const season = lastWatchedParts[2];
+				const episode = lastWatchedParts[3];
+				watchStatusEl.textContent = `Season ${season} Episode ${episode} ${timeStatus}`;
+
+				// Update Resume and Next Episode buttons
+				const resumeBtn = document.querySelector('.resume-series-btn');
+				const nextBtn = document.querySelector('.next-episode-btn');
+				const dbKey = `tv-${seriesId}`;
+				const localFiles = this.localFileDatabase[dbKey];
+
+				if (resumeBtn && nextBtn && localFiles) {
+					const resumeBtnPath = localFiles[`${season}-${episode}`];
+					if (resumeBtnPath) {
+						resumeBtn.setAttribute('data-path', resumeBtnPath);
+						resumeBtn.setAttribute('data-media-id', lastWatched.media_id);
+						resumeBtn.disabled = false;
+					} else {
+						resumeBtn.disabled = true;
+					}
+					nextBtn.setAttribute('data-last-watched-episode', lastWatched.media_id);
 				}
-			});
+			}
 		}
 	}
 
