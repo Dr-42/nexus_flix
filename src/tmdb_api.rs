@@ -78,15 +78,38 @@ impl TmdbApi {
         }
         let metadata_file = metadata_folder.join(format!("movie_{}.json", id));
         if metadata_file.exists() {
-            let json_data = std::fs::read_to_string(&metadata_file).unwrap();
-            let val: Value = serde_json::from_str(&json_data).unwrap();
-            Ok(val)
+            let json_data_time = std::fs::metadata(&metadata_file)
+                .unwrap()
+                .modified()
+                .unwrap();
+            let age = std::time::SystemTime::now()
+                .duration_since(json_data_time)
+                .unwrap()
+                .as_secs();
+            // If the cached data is older than 7 days, refetch
+            if age > 7 * 24 * 60 * 60 {
+                let mut params = HashMap::new();
+                if let Some(append) = append_to_response {
+                    params.insert("append_to_response".to_string(), append.to_string());
+                }
+                let val = self
+                    .fetch_from_tmdb(&format!("movie/{}", id), Some(params))
+                    .await?;
+                let json_data = serde_json::to_string_pretty(&val).unwrap();
+                std::fs::write(metadata_file, json_data).unwrap();
+                Ok(val)
+            } else {
+                let json_data = std::fs::read_to_string(&metadata_file).unwrap();
+                let val: Value = serde_json::from_str(&json_data).unwrap();
+                Ok(val)
+            }
         } else {
             let mut params = HashMap::new();
             if let Some(append) = append_to_response {
                 params.insert("append_to_response".to_string(), append.to_string());
             }
-            let val = self.fetch_from_tmdb(&format!("movie/{}", id), Some(params))
+            let val = self
+                .fetch_from_tmdb(&format!("movie/{}", id), Some(params))
                 .await?;
             let json_data = serde_json::to_string_pretty(&val).unwrap();
             std::fs::write(metadata_file, json_data).unwrap();
@@ -108,9 +131,31 @@ impl TmdbApi {
 
         let metadata_file = metadata_folder.join(format!("tv_{}.json", id));
         if metadata_file.exists() {
-            let json_data = std::fs::read_to_string(&metadata_file).unwrap();
-            let val: Value = serde_json::from_str(&json_data).unwrap();
-            Ok(val)
+            let json_data_time = std::fs::metadata(&metadata_file)
+                .unwrap()
+                .modified()
+                .unwrap();
+            let age = std::time::SystemTime::now()
+                .duration_since(json_data_time)
+                .unwrap()
+                .as_secs();
+            // If the cached data is older than 7 days, refetch
+            if age > 7 * 24 * 60 * 60 {
+                let mut params = HashMap::new();
+                if let Some(append) = append_to_response {
+                    params.insert("append_to_response".to_string(), append.to_string());
+                }
+                let val = self
+                    .fetch_from_tmdb(&format!("tv/{}", id), Some(params))
+                    .await?;
+                let json_data = serde_json::to_string_pretty(&val).unwrap();
+                std::fs::write(metadata_file, json_data).unwrap();
+                Ok(val)
+            } else {
+                let json_data = std::fs::read_to_string(&metadata_file).unwrap();
+                let val: Value = serde_json::from_str(&json_data).unwrap();
+                Ok(val)
+            }
         } else {
             let mut params = HashMap::new();
             if let Some(append) = append_to_response {
