@@ -66,6 +66,7 @@ export class ModalManager {
   }
 
   async showDetails(itemId, itemType) {
+    console.log('Showing details for', itemType, itemId);
     this.showModal();
     this.modalContent.innerHTML = `<div class="flex justify-center items-center h-96"><div class="loader"></div></div>`;
     const dbKey = `${itemType}-${itemId}`;
@@ -187,7 +188,18 @@ export class ModalManager {
         return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
     };
 
-    const watchStatus = watchHistory && watchHistory.total_duration > 0 ? `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}` : '';
+    let watchStatus = '';
+    if (watchHistory && watchHistory.total_duration > 0) {
+        const timeStatus = `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}`;
+        if (itemType === 'tv') {
+            const parts = watchHistory.media_id.split('-');
+            const season = parts[2];
+            const episode = parts[3];
+            watchStatus = `Season ${season} Episode ${episode} ${timeStatus}`;
+        } else {
+            watchStatus = timeStatus;
+        }
+    }
 
     let seriesButtons = '';
     if (itemType === 'tv' && localFiles) {
@@ -373,6 +385,7 @@ export class ModalManager {
   }
 
   async hideVideoPlayer(mediaId) {
+    console.log('Hiding video player for', mediaId);
     if (window.nexusPlayer && window.nexusPlayer.player) {
         const watched_duration = window.nexusPlayer.player.currentTime();
         const total_duration = window.nexusPlayer.player.duration();
@@ -382,7 +395,9 @@ export class ModalManager {
             total_duration,
             last_watched_timestamp: Date.now(),
         };
+        console.log('Updating watch history:', watchHistory);
         await this.updateWatchHistory(watchHistory);
+        console.log('Watch history updated.');
         window.nexusPlayer.player.dispose();
         window.nexusPlayer = null;
     }
@@ -392,6 +407,7 @@ export class ModalManager {
     const parts = mediaId.split('-');
     const itemType = parts[0];
     const itemId = parts[1];
+    console.log('Refreshing details for', itemType, itemId);
     this.showDetails(itemId, itemType);
   }
 

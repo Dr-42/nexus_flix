@@ -145,6 +145,7 @@ impl TmdbApi {
                 .as_secs();
             // If the cached data is older than 7 days, refetch
             if age > 7 * 24 * 60 * 60 {
+                println!("Refetching TV metadata for ID: {}", id);
                 let mut params = HashMap::new();
                 if let Some(append) = append_to_response {
                     params.insert("append_to_response".to_string(), append.to_string());
