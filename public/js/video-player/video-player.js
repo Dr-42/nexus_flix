@@ -11,7 +11,7 @@ export class VideoPlayer {
   constructor(videoElementId, videoPath) {
     this.videoElementId = videoElementId;
     this.videoElement = document.getElementById(videoElementId);
-    this.videoPath = encodeURI(videoPath);
+    this.videoPath = encodeURIComponent(videoPath);
     this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
     this.audioMimeType = 'audio/mp4 ; codecs="opus"';
     this.mediaSource = null;
