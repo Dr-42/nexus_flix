@@ -116,6 +116,48 @@ async fn tmdb_discover(
     }
 }
 
+async fn tmdb_image(
+    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
+    axum::extract::Path((size, path)): axum::extract::Path<(String, String)>,
+) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    let path = path.strip_prefix('/').unwrap_or(&path).to_string();
+    match tmdb_api.get_image(&size, &path).await {
+        Ok(image_data) => {
+            let response = axum::response::Response::builder()
+                .header("Content-Type", "image/jpeg")
+                .body(axum::body::Body::from(image_data))
+                .unwrap();
+            Ok(response)
+        }
+        Err(e) => Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to fetch image from TMDB: {}", e),
+        )),
+    }
+}
+
+// Receives width, height, and text as query parameters
+// Use tmdb_api.get_placeholder_image to generate the image
+async fn serve_placeholder_image(
+    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
+    let width = params.get("width").and_then(|w| w.parse::<u32>().ok()).unwrap_or(300);
+    let height = params.get("height").and_then(|h| h.parse::<u32>().ok()).unwrap_or(450);
+    let text = params.get("text").unwrap_or(&"No Image".to_string()).clone();
+    match tmdb_api.get_placeholder_image(width, height, &text).await {
+        Ok(image_data) => {
+            let response = axum::response::Response::builder()
+                .header("Content-Type", "image/png")
+                .body(axum::body::Body::from(image_data))
+                .unwrap();
+            Ok(response)
+        },
+        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate placeholder image: {}", e))),
+    }
+}
+
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -136,6 +178,8 @@ async fn main() {
         .route("/api/add-media", post(api_servers::add_media))
         .route("/api/get-media", get(api_servers::get_media))
         .route("/api/keys", get(get_api_keys))
+        // Placeholder image
+        .route("/api/placeholder", get(serve_placeholder_image))
         // TMDB API routes
         .route("/api/tmdb/search", get(tmdb_search))
         .route("/api/tmdb/{media_type}/{id}", get(tmdb_details))
@@ -143,6 +187,7 @@ async fn main() {
         .route("/api/tmdb/genres/{media_type}", get(tmdb_genres))
         .route("/api/tmdb/trending/{media_type}/{time_window}", get(tmdb_trending))
         .route("/api/tmdb/discover/{media_type}", get(tmdb_discover))
+        .route("/api/tmdb/image/{size}/{*path}", get(tmdb_image))
         // Video Player Components
         .route(
             "/public/js/video-player/webvtt-parser.js",
@@ -161,10 +206,6 @@ async fn main() {
             get(web_servers::serve_video_player),
         )
         // API Components
-        .route(
-            "/public/js/api/tmdb-api.js",
-            get(web_servers::serve_tmdb_api),
-        )
         .route(
             "/public/js/api/backend-tmdb-api.js",
             get(web_servers::serve_backend_tmdb_api),

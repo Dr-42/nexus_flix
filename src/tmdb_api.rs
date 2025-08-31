@@ -23,9 +23,7 @@ pub struct TmdbResponse {
 impl TmdbApi {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let api_key = env::var("TMDB_API_KEY").expect("TMDB_API_KEY must be set");
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
         Ok(TmdbApi {
             client,
@@ -49,12 +47,7 @@ impl TmdbApi {
             }
         }
 
-        let response = self
-            .client
-            .get(&url)
-            .query(&query_params)
-            .send()
-            .await?;
+        let response = self.client.get(&url).query(&query_params).send().await?;
 
         response.json().await
     }
@@ -133,17 +126,54 @@ impl TmdbApi {
             .await
     }
 
-    pub fn get_image_url(&self, path: &str, size: &str) -> String {
+    fn get_image_url(&self, path: &str, size: &str) -> String {
         if path.is_empty() {
             return String::new();
         }
-        format!("{}/{}{}", self.image_base_url, size, path)
+        format!("{}/{}/{}", self.image_base_url, size, path)
     }
 
-    pub fn get_placeholder_image(&self, width: u32, height: u32, text: &str) -> String {
-        format!(
-            "https://placehold.co/{}x{}/1f2937/ffffff?text={}",
-            width, height, text
-        )
+    pub async fn get_image(&self, size: &str, path: &str) -> Result<Vec<u8>, reqwest::Error> {
+        let data_path = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
+        let cache_dir = data_path.cache_dir();
+        if !cache_dir.exists() {
+            std::fs::create_dir_all(cache_dir).unwrap();
+        }
+
+        let image_path = format!(
+            "{}/{}_{}",
+            cache_dir.display(),
+            size,
+            path.replace("/", "_")
+        );
+        if std::path::Path::new(&image_path).exists() {
+            Ok(std::fs::read(&image_path).unwrap())
+        } else {
+            let url = self.get_image_url(path, size);
+            let response = self.client.get(&url).send().await?;
+            let bytes = response.bytes().await?;
+            std::fs::write(&image_path, &bytes).unwrap();
+            Ok(bytes.to_vec())
+        }
+    }
+
+    pub async fn get_placeholder_image(&self, width: u32, height: u32, text: &str) -> Result<Vec<u8>, reqwest::Error> {
+        let data_path = directories::ProjectDirs::from("com", "dr42", "nexus").unwrap();
+        let cache_dir = data_path.cache_dir();
+        if !cache_dir.exists() {
+            std::fs::create_dir_all(cache_dir).unwrap();
+        }
+
+        let placeholder_path = format!("{}/placeholder_{}x{}_{}.png", cache_dir.display(), width, height, text.replace(" ", "-"));
+        if std::path::Path::new(&placeholder_path).exists() {
+            Ok(std::fs::read(&placeholder_path).unwrap())
+        } else {
+            let url = format!("https://via.placeholder.com/{}x{}?text={}", width, height, text);
+            let response = self.client.get(&url).send().await?;
+            let bytes = response.bytes().await?;
+            std::fs::write(&placeholder_path, &bytes).unwrap();
+            Ok(bytes.to_vec())
+        }
     }
 }
+

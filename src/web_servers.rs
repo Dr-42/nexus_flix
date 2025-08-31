@@ -50,15 +50,6 @@ pub async fn serve_video_player() -> impl IntoResponse {
         .unwrap()
 }
 
-pub async fn serve_tmdb_api() -> impl IntoResponse {
-    let js_text = include_str!("../public/js/api/tmdb-api.js");
-    Response::builder()
-        .status(200)
-        .header(header::CONTENT_TYPE, "application/javascript")
-        .body(Body::new(js_text.to_string()))
-        .unwrap()
-}
-
 pub async fn serve_backend_tmdb_api() -> impl IntoResponse {
     let js_text = include_str!("../public/js/api/backend-tmdb-api.js");
     Response::builder()

@@ -3,78 +3,78 @@
  * This module communicates with our backend which handles TMDB API requests
  */
 export class BackendTMDBApi {
-  constructor() {
-    this.imageBaseUrl = "https://image.tmdb.org/t/p";
-  }
+	constructor() {
+		this.imageBaseUrl = "https://image.tmdb.org/t/p";
+	}
 
-  async fetchFromBackend(endpoint, params = {}) {
-    const url = new URL(`/api/tmdb/${endpoint}`, window.location.origin);
-    for (const key in params) {
-      url.searchParams.append(key, params[key]);
-    }
-    
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Backend API Error (${response.status}): ${response.statusText}`);
-      }
-      return await response.json();
-    } catch (error) {
-      console.error(`Backend API Error for endpoint ${endpoint}:`, error);
-      throw error;
-    }
-  }
+	async fetchFromBackend(endpoint, params = {}) {
+		const url = new URL(`/api/tmdb/${endpoint}`, window.location.origin);
+		for (const key in params) {
+			url.searchParams.append(key, params[key]);
+		}
 
-  // Search methods
-  async searchMovie(query) {
-    return this.fetchFromBackend("search", { query, type: "movie" });
-  }
+		try {
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error(`Backend API Error (${response.status}): ${response.statusText}`);
+			}
+			return await response.json();
+		} catch (error) {
+			console.error(`Backend API Error for endpoint ${endpoint}:`, error);
+			throw error;
+		}
+	}
 
-  async searchTV(query) {
-    return this.fetchFromBackend("search", { query, type: "tv" });
-  }
+	// Search methods
+	async searchMovie(query) {
+		return this.fetchFromBackend("search", { query, type: "movie" });
+	}
 
-  // Details methods
-  async getMovieDetails(id, appendToResponse = "") {
-    const params = appendToResponse ? { append_to_response: appendToResponse } : {};
-    return this.fetchFromBackend(`movie/${id}`, params);
-  }
+	async searchTV(query) {
+		return this.fetchFromBackend("search", { query, type: "tv" });
+	}
 
-  async getTVDetails(id, appendToResponse = "") {
-    const params = appendToResponse ? { append_to_response: appendToResponse } : {};
-    return this.fetchFromBackend(`tv/${id}`, params);
-  }
+	// Details methods
+	async getMovieDetails(id, appendToResponse = "") {
+		const params = appendToResponse ? { append_to_response: appendToResponse } : {};
+		return this.fetchFromBackend(`movie/${id}`, params);
+	}
 
-  // Season details
-  async getTVSeason(tvId, seasonNumber) {
-    return this.fetchFromBackend(`tv/${tvId}/season/${seasonNumber}`);
-  }
+	async getTVDetails(id, appendToResponse = "") {
+		const params = appendToResponse ? { append_to_response: appendToResponse } : {};
+		return this.fetchFromBackend(`tv/${id}`, params);
+	}
 
-  // Genre methods
-  async getMovieGenres() {
-    return this.fetchFromBackend("genres/movie");
-  }
+	// Season details
+	async getTVSeason(tvId, seasonNumber) {
+		return this.fetchFromBackend(`tv/${tvId}/season/${seasonNumber}`);
+	}
 
-  async getTVGenres() {
-    return this.fetchFromBackend("genres/tv");
-  }
+	// Genre methods
+	async getMovieGenres() {
+		return this.fetchFromBackend("genres/movie");
+	}
 
-  // Trending methods
-  async getTrending(mediaType = "all", timeWindow = "day") {
-    return this.fetchFromBackend(`trending/${mediaType}/${timeWindow}`);
-  }
+	async getTVGenres() {
+		return this.fetchFromBackend("genres/tv");
+	}
 
-  // Discover methods
-  async discover(mediaType, params = {}) {
-    return this.fetchFromBackend(`discover/${mediaType}`, params);
-  }
+	// Trending methods
+	async getTrending(mediaType = "all", timeWindow = "day") {
+		return this.fetchFromBackend(`trending/${mediaType}/${timeWindow}`);
+	}
 
-  // Image URL methods
-  getImageUrl(path, size = "w500") {
-    return path ? `${this.imageBaseUrl}/${size}${path}` : null;
-  }
+	// Discover methods
+	async discover(mediaType, params = {}) {
+		return this.fetchFromBackend(`discover/${mediaType}`, params);
+	}
 
-  getPlaceholderImage(width = 400, height = 600, text = "No+Image") {
-    return `https://placehold.co/${width}x${height}/1f2937/ffffff?text=${text}`;
-  }
+	// Image URL methods
+	getImageUrl(path, size = "w500") {
+		return this.fetchFromBackend(`image/${size}${path}`);
+	}
+
+	getPlaceholderImage(width = 400, height = 600, text = "No+Image") {
+		this.fetchFromBackend(`placeholder`, { width, height, text });
+	}
 }
