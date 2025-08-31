@@ -25,139 +25,6 @@ async fn get_api_keys() -> Json<ApiKeys> {
     Json(keys)
 }
 
-// TMDB API routes
-async fn tmdb_search(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let query = params.get("query").unwrap_or(&String::new()).clone();
-    let media_type = params.get("type").unwrap_or(&"movie".to_string()).clone();
-    
-    let result = if media_type == "tv" {
-        tmdb_api.search_tv(&query).await
-    } else {
-        tmdb_api.search_movie(&query).await
-    };
-    
-    match result {
-        Ok(data) => Ok(Json(data)),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to perform search on TMDB: {}", e))),
-    }
-}
-
-async fn tmdb_details(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path((media_type, id)): axum::extract::Path<(String, String)>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let append_to_response = params.get("append_to_response").map(|s| s.as_str());
-    
-    let result = if media_type == "tv" {
-        tmdb_api.get_tv_details(&id, append_to_response).await
-    } else {
-        tmdb_api.get_movie_details(&id, append_to_response).await
-    };
-    
-    match result {
-        Ok(data) => Ok(Json(data)),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch details from TMDB: {}", e))),
-    }
-}
-
-async fn tmdb_season(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path((tv_id, season_number)): axum::extract::Path<(String, String)>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    match tmdb_api.get_tv_season(&tv_id, &season_number).await {
-        Ok(data) => Ok(Json(data)),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch season details from TMDB: {}", e))),
-    }
-}
-
-async fn tmdb_genres(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path(media_type): axum::extract::Path<String>,
-) -> Result<Json<serde_json::Value>, (axum::http::StatusCode, String)> {
-    let result = if media_type == "tv" {
-        tmdb_api.get_tv_genres().await
-    } else {
-        tmdb_api.get_movie_genres().await
-    };
-    
-    match result {
-        Ok(data) => Ok(Json(data)),
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch genres from TMDB: {}", e))),
-    }
-}
-
-async fn tmdb_trending(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path((media_type, time_window)): axum::extract::Path<(String, String)>,
-) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-    match tmdb_api.get_trending(&media_type, &time_window).await {
-        Ok(data) => Ok(Json(data)),
-        Err(_) => Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-async fn tmdb_discover(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path(media_type): axum::extract::Path<String>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<Json<serde_json::Value>, axum::http::StatusCode> {
-    let mut tmdb_params = std::collections::HashMap::new();
-    for (key, value) in params {
-        tmdb_params.insert(key, value);
-    }
-    
-    match tmdb_api.discover(&media_type, Some(tmdb_params)).await {
-        Ok(data) => Ok(Json(data)),
-        Err(_) => Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-async fn tmdb_image(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Path((size, path)): axum::extract::Path<(String, String)>,
-) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
-    let path = path.strip_prefix('/').unwrap_or(&path).to_string();
-    match tmdb_api.get_image(&size, &path).await {
-        Ok(image_data) => {
-            let response = axum::response::Response::builder()
-                .header("Content-Type", "image/jpeg")
-                .body(axum::body::Body::from(image_data))
-                .unwrap();
-            Ok(response)
-        }
-        Err(e) => Err((
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to fetch image from TMDB: {}", e),
-        )),
-    }
-}
-
-// Receives width, height, and text as query parameters
-// Use tmdb_api.get_placeholder_image to generate the image
-async fn serve_placeholder_image(
-    Extension(tmdb_api): Extension<Arc<tmdb_api::TmdbApi>>,
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-) -> Result<axum::response::Response, (axum::http::StatusCode, String)> {
-    let width = params.get("width").and_then(|w| w.parse::<u32>().ok()).unwrap_or(300);
-    let height = params.get("height").and_then(|h| h.parse::<u32>().ok()).unwrap_or(450);
-    let text = params.get("text").unwrap_or(&"No Image".to_string()).clone();
-    match tmdb_api.get_placeholder_image(width, height, &text).await {
-        Ok(image_data) => {
-            let response = axum::response::Response::builder()
-                .header("Content-Type", "image/png")
-                .body(axum::body::Body::from(image_data))
-                .unwrap();
-            Ok(response)
-        },
-        Err(e) => Err((axum::http::StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate placeholder image: {}", e))),
-    }
-}
-
-
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -179,15 +46,15 @@ async fn main() {
         .route("/api/get-media", get(api_servers::get_media))
         .route("/api/keys", get(get_api_keys))
         // Placeholder image
-        .route("/api/placeholder", get(serve_placeholder_image))
+        .route("/api/placeholder", get(tmdb_api::serve_placeholder_image))
         // TMDB API routes
-        .route("/api/tmdb/search", get(tmdb_search))
-        .route("/api/tmdb/{media_type}/{id}", get(tmdb_details))
-        .route("/api/tmdb/tv/{tv_id}/season/{season_number}", get(tmdb_season))
-        .route("/api/tmdb/genres/{media_type}", get(tmdb_genres))
-        .route("/api/tmdb/trending/{media_type}/{time_window}", get(tmdb_trending))
-        .route("/api/tmdb/discover/{media_type}", get(tmdb_discover))
-        .route("/api/tmdb/image/{size}/{*path}", get(tmdb_image))
+        .route("/api/tmdb/search", get(tmdb_api::tmdb_search))
+        .route("/api/tmdb/{media_type}/{id}", get(tmdb_api::tmdb_details))
+        .route("/api/tmdb/tv/{tv_id}/season/{season_number}", get(tmdb_api::tmdb_season))
+        .route("/api/tmdb/genres/{media_type}", get(tmdb_api::tmdb_genres))
+        .route("/api/tmdb/trending/{media_type}/{time_window}", get(tmdb_api::tmdb_trending))
+        .route("/api/tmdb/discover/{media_type}", get(tmdb_api::tmdb_discover))
+        .route("/api/tmdb/image/{size}/{*path}", get(tmdb_api::tmdb_image))
         // Video Player Components
         .route(
             "/public/js/video-player/webvtt-parser.js",

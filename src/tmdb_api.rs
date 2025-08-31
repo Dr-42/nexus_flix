@@ -4,6 +4,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::env;
 use std::time::Duration;
+use axum::{
+    Json, Extension, response::{Response}, body::Body, http::StatusCode,
+};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct TmdbApi {
@@ -267,5 +271,137 @@ impl TmdbApi {
             std::fs::write(&placeholder_path, &bytes).unwrap();
             Ok(bytes.to_vec())
         }
+    }
+}
+
+// TMDB API routes
+pub async fn tmdb_search(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let query = params.get("query").unwrap_or(&String::new()).clone();
+    let media_type = params.get("type").unwrap_or(&"movie".to_string()).clone();
+    
+    let result = if media_type == "tv" {
+        tmdb_api.search_tv(&query).await
+    } else {
+        tmdb_api.search_movie(&query).await
+    };
+    
+    match result {
+        Ok(data) => Ok(Json(data)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to perform search on TMDB: {}", e))),
+    }
+}
+
+pub async fn tmdb_details(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path((media_type, id)): axum::extract::Path<(String, String)>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let append_to_response = params.get("append_to_response").map(|s| s.as_str());
+    
+    let result = if media_type == "tv" {
+        tmdb_api.get_tv_details(&id, append_to_response).await
+    } else {
+        tmdb_api.get_movie_details(&id, append_to_response).await
+    };
+    
+    match result {
+        Ok(data) => Ok(Json(data)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch details from TMDB: {}", e))),
+    }
+}
+
+pub async fn tmdb_season(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path((tv_id, season_number)): axum::extract::Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    match tmdb_api.get_tv_season(&tv_id, &season_number).await {
+        Ok(data) => Ok(Json(data)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch season details from TMDB: {}", e))),
+    }
+}
+
+pub async fn tmdb_genres(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path(media_type): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let result = if media_type == "tv" {
+        tmdb_api.get_tv_genres().await
+    } else {
+        tmdb_api.get_movie_genres().await
+    };
+    
+    match result {
+        Ok(data) => Ok(Json(data)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to fetch genres from TMDB: {}", e))),
+    }
+}
+
+pub async fn tmdb_trending(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path((media_type, time_window)): axum::extract::Path<(String, String)>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    match tmdb_api.get_trending(&media_type, &time_window).await {
+        Ok(data) => Ok(Json(data)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn tmdb_discover(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path(media_type): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let mut tmdb_params = std::collections::HashMap::new();
+    for (key, value) in params {
+        tmdb_params.insert(key, value);
+    }
+    
+    match tmdb_api.discover(&media_type, Some(tmdb_params)).await {
+        Ok(data) => Ok(Json(data)),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+pub async fn tmdb_image(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Path((size, path)): axum::extract::Path<(String, String)>,
+) -> Result<Response, (StatusCode, String)> {
+    let path = path.strip_prefix('/').unwrap_or(&path).to_string();
+    match tmdb_api.get_image(&size, &path).await {
+        Ok(image_data) => {
+            let response = Response::builder()
+                .header("Content-Type", "image/jpeg")
+                .body(Body::from(image_data))
+                .unwrap();
+            Ok(response)
+        }
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to fetch image from TMDB: {}", e),
+        )),
+    }
+}
+
+// Receives width, height, and text as query parameters
+// Use tmdb_api.get_placeholder_image to generate the image
+pub async fn serve_placeholder_image(
+    Extension(tmdb_api): Extension<Arc<TmdbApi>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<Response, (StatusCode, String)> {
+    let width = params.get("width").and_then(|w| w.parse::<u32>().ok()).unwrap_or(300);
+    let height = params.get("height").and_then(|h| h.parse::<u32>().ok()).unwrap_or(450);
+    let text = params.get("text").unwrap_or(&"No Image".to_string()).clone();
+    match tmdb_api.get_placeholder_image(width, height, &text).await {
+        Ok(image_data) => {
+            let response = Response::builder()
+                .header("Content-Type", "image/png")
+                .body(Body::from(image_data))
+                .unwrap();
+            Ok(response)
+        },
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to generate placeholder image: {}", e))),
     }
 }
