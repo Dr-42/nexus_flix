@@ -76,11 +76,76 @@ export class EventHandler {
       return;
     }
 
-    // Play button
-    const playBtn = e.target.closest(".play-episode-btn, .play-movie-btn");
-    if (playBtn && playBtn.dataset.path) {
-      this.modalManager.showVideoPlayer(playBtn.dataset.path);
-      return;
+    // Play movie button
+    const playMovieBtn = e.target.closest(".play-movie-btn");
+    if (playMovieBtn && playMovieBtn.dataset.path) {
+        const mediaId = playMovieBtn.dataset.mediaId;
+        const watchHistory = await this.modalManager.getWatchHistory(mediaId);
+        const playFromBeginning = playMovieBtn.dataset.playFromBeginning === 'true';
+
+        if (playFromBeginning) {
+            this.modalManager.showVideoPlayer(playMovieBtn.dataset.path, mediaId, null);
+        } else {
+            this.modalManager.showVideoPlayer(playMovieBtn.dataset.path, mediaId, watchHistory);
+        }
+        return;
+    }
+
+    // Play episode button
+    const playEpisodeBtn = e.target.closest(".play-episode-btn");
+    if (playEpisodeBtn && playEpisodeBtn.dataset.path) {
+        const mediaId = playEpisodeBtn.dataset.mediaId;
+        const watchHistory = await this.modalManager.getWatchHistory(mediaId);
+        this.modalManager.showVideoPlayer(playEpisodeBtn.dataset.path, mediaId, watchHistory);
+        return;
+    }
+
+    // Resume series button
+    const resumeSeriesBtn = e.target.closest(".resume-series-btn");
+    if (resumeSeriesBtn && resumeSeriesBtn.dataset.path) {
+        const mediaId = resumeSeriesBtn.dataset.mediaId;
+        const watchHistory = await this.modalManager.getWatchHistory(mediaId);
+        this.modalManager.showVideoPlayer(resumeSeriesBtn.dataset.path, mediaId, watchHistory);
+        return;
+    }
+
+    // Next episode button
+    const nextEpisodeBtn = e.target.closest(".next-episode-btn");
+    if (nextEpisodeBtn) {
+        const seriesId = nextEpisodeBtn.dataset.seriesId;
+        const lastWatchedEpisode = nextEpisodeBtn.dataset.lastWatchedEpisode;
+        const localFiles = this.localLibraryManager.getLocalFileDatabase();
+        const seriesFileKey = Object.keys(localFiles).find(key => key.endsWith(seriesId));
+        const seriesFiles = localFiles[seriesFileKey];
+
+        if (seriesFiles) {
+            let nextEpisodeKey;
+            if (document.getElementById('play-random-episode-toggle').checked) {
+                const episodeKeys = Object.keys(seriesFiles);
+                nextEpisodeKey = episodeKeys[Math.floor(Math.random() * episodeKeys.length)];
+            } else if (lastWatchedEpisode) {
+                const parts = lastWatchedEpisode.split('-');
+                let season = parseInt(parts[2]);
+                let episode = parseInt(parts[3]);
+                episode++;
+                nextEpisodeKey = `${season}-${episode}`;
+                if (!seriesFiles[nextEpisodeKey]) {
+                    season++;
+                    episode = 1;
+                    nextEpisodeKey = `${season}-${episode}`;
+                }
+            } else {
+                nextEpisodeKey = Object.keys(seriesFiles).find(key => key.startsWith('1-1'));
+            }
+
+            if (seriesFiles[nextEpisodeKey]) {
+                const filePath = seriesFiles[nextEpisodeKey];
+                const mediaId = `tv-${seriesId}-${nextEpisodeKey}`;
+                const watchHistory = await this.modalManager.getWatchHistory(mediaId);
+                this.modalManager.showVideoPlayer(filePath, mediaId, watchHistory);
+            }
+        }
+        return;
     }
   }
 
@@ -96,7 +161,7 @@ export class EventHandler {
     changeInterfaceDiv.classList.remove("hidden");
 
     changeInterfaceDiv.innerHTML = `
-      <h3 class="text-xl font-bold">Change TMDB Match for "${itemTitle}"</h3>
+      <h3 class="text-xl font-bold">Change TMDB Match for \"${itemTitle}\"</h3>
       <p class="text-sm text-[color:var(--text-secondary)]">Search for the correct title below. The current entry will be replaced.</p>
       <div class="relative flex gap-2">
         <input type="text" id="tmdb-change-search-input" placeholder="Search for new title..." class="search-input w-full pl-4 pr-4 py-2 rounded-lg text-base">
@@ -133,8 +198,8 @@ export class EventHandler {
             this.tmdbApi.getImageUrl(result.poster_path, "w92") ||
             this.tmdbApi.getPlaceholderImage(92, 138, "N/A");
 
-          return `
-            <div class="flex items-center gap-4 p-2 rounded-lg bg-[color:var(--bg-tertiary)]">
+          return (
+            `<div class="flex items-center gap-4 p-2 rounded-lg bg-[color:var(--bg-tertiary)]">
               <img src="${posterPath}" class="w-12 h-auto rounded" onerror="this.onerror=null;this.src='${this.tmdbApi.getPlaceholderImage(92, 138, "N/A")}';">
               <div class="flex-grow">
                 <p class="font-semibold">${title}</p>
@@ -143,8 +208,8 @@ export class EventHandler {
               <button class="select-new-tmdb-btn px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-semibold text-sm" data-new-id="${result.id}" data-old-id="${oldId}" data-type="${type}">
                 Select
               </button>
-            </div>
-          `;
+            </div>`
+          );
         })
         .join("");
     } catch (error) {
@@ -179,7 +244,7 @@ export class EventHandler {
 
       if (oldItemIndex === -1) {
         throw new Error(
-          "Could not find the old item in the local library to replace.",
+          "Could not find the old item in the local library to replace."
         );
       }
 
@@ -215,12 +280,13 @@ export class EventHandler {
 
   toggleAccordion(accordionBtn) {
     const episodeList = accordionBtn.nextElementSibling;
-    const icon = accordionBtn.querySelector("i");
+    const icon = accordionBtn.querySelector("svg");
     if (episodeList.style.maxHeight) {
       episodeList.style.maxHeight = null;
-      icon.style.transform = "rotate(0deg)";
+      if (icon) icon.style.transform = "rotate(0deg)";
     } else {
       episodeList.style.maxHeight = episodeList.scrollHeight + "px";
+      if (icon) icon.style.transform = "rotate(180deg)";
     }
   }
 }

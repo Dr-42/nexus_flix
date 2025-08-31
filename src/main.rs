@@ -50,6 +50,9 @@ async fn main() {
     let app = add_route!(app, get, "/file_list", video_servers::serve_file_list);
     let app = add_route!(app, post, "/api/add-media", api_servers::add_media);
     let app = add_route!(app, get, "/api/get-media", api_servers::get_media);
+    let app = add_route!(app, post, "/api/update-watch-history", api_servers::update_watch_history);
+    let app = add_route!(app, post, "/api/get-watch-history", api_servers::get_watch_history);
+    let app = add_route!(app, get, "/api/get-all-watch-history", api_servers::get_all_watch_history);
     let app = add_route!(app, get, "/api/keys", get_api_keys);
     // Placeholder image
     let app = add_route!(app, get, "/api/placeholder", tmdb_api::serve_placeholder_image);

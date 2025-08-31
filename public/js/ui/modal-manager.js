@@ -76,6 +76,13 @@ export class ModalManager {
         append_to_response: "credits,videos,recommendations",
       });
 
+      let watchHistory = null;
+      if (itemType === 'movie') {
+        watchHistory = await this.getWatchHistory(dbKey);
+      } else if (itemType === 'tv') {
+        watchHistory = await this.findLastWatchedEpisode(itemId);
+      }
+
       const title = item.title || item.name;
       const backdropPath =
         this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
@@ -96,6 +103,7 @@ export class ModalManager {
         localFiles,
         itemType,
         seasonsHTML,
+        watchHistory
       );
       lucide.createIcons();
     } catch (error) {
@@ -117,7 +125,7 @@ export class ModalManager {
           if (!season || !season.episodes) return "";
           return `
             <div>
-              <button class="season-accordion-btn flex justify-between items-center">
+              <button class="season-accordion-btn flex justify-between items-center w-full">
                 <span>${season.name}</span>
                 <i data-lucide="chevron-down" class="w-5 h-5 transition-transform"></i>
               </button>
@@ -130,13 +138,17 @@ export class ModalManager {
                             `${season.season_number}-${ep.episode_number}`
                           ]
                         : null;
+                      const mediaId = `${item.id}-${season.season_number}-${ep.episode_number}`;
                       return `
                         <li class="p-2 flex justify-between items-center rounded-md hover:bg-black/20">
                           <div class="flex-1 mr-4">
                             <span class="font-bold">${ep.episode_number}. ${ep.name}</span>
                             <p class="text-xs text-gray-400 mt-1 line-clamp-2">${ep.overview}</p>
+                            <div class="w-full bg-gray-700 rounded-full h-1.5 mt-2">
+                                <div class="bg-green-600 h-1.5 rounded-full" id="progress-${mediaId}" style="width: 0%"></div>
+                            </div>
                           </div>
-                          <button class="play-episode-btn flex-shrink-0 px-3 py-1 rounded ${episodeFile ? "bg-green-600 hover:bg-green-500" : "bg-gray-600 cursor-not-allowed"}" ${episodeFile ? `data-path="${episodeFile}"` : "disabled"}>Play</button>
+                          <button class="play-episode-btn flex-shrink-0 px-3 py-1 rounded ${episodeFile ? "bg-green-600 hover:bg-green-500" : "bg-gray-600 cursor-not-allowed"}" ${episodeFile ? `data-path="${episodeFile}" data-media-id="${mediaId}"` : "disabled"}>Play</button>
                         </li>
                       `;
                     })
@@ -159,10 +171,47 @@ export class ModalManager {
     localFiles,
     itemType,
     seasonsHTML,
+    watchHistory
   ) {
     const trailer = item.videos?.results.find(
       (video) => video.type === "Trailer" && video.site === "YouTube",
     );
+
+    const mediaId = `${itemType}-${item.id}`;
+    const watchedPercentage = watchHistory && watchHistory.total_duration > 0 ? (watchHistory.watched_duration / watchHistory.total_duration) * 100 : 0;
+
+    const formatTime = (seconds) => {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+    };
+
+    const watchStatus = watchHistory && watchHistory.total_duration > 0 ? `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}` : '';
+
+    let seriesButtons = '';
+    if (itemType === 'tv' && localFiles) {
+        const lastWatchedEpisodeHistory = watchHistory;
+        let resumeBtnPath = '';
+        let resumeBtnMediaId = '';
+        if (lastWatchedEpisodeHistory) {
+            const parts = lastWatchedEpisodeHistory.media_id.split('-');
+            const season = parts[2];
+            const episode = parts[3];
+            resumeBtnPath = localFiles[`${season}-${episode}`];
+            resumeBtnMediaId = lastWatchedEpisodeHistory.media_id;
+        }
+
+        seriesButtons = `
+            <button class="resume-series-btn flex-1 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" ${resumeBtnPath ? `data-path="${resumeBtnPath}" data-media-id="${resumeBtnMediaId}"` : 'disabled'}>Resume</button>
+            <button class="next-episode-btn flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:opacity-90 transition-opacity" data-series-id="${item.id}" ${lastWatchedEpisodeHistory ? `data-last-watched-episode="${lastWatchedEpisodeHistory.media_id}"` : ''}>Next Episode</button>
+            <label class="flex items-center gap-2 text-sm">
+                <input type="checkbox" id="play-random-episode-toggle" class="form-checkbox h-5 w-5 text-green-600 bg-gray-800 border-gray-600 rounded focus:ring-green-500">
+                Play random
+            </label>
+        `;
+    }
+
     return `
       <div class="relative">
         <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
@@ -183,7 +232,24 @@ export class ModalManager {
             <div class="flex flex-wrap gap-2 mt-4">
               ${item.genres.map((g) => `<span class="px-3 py-1 text-xs rounded-full bg-[color:var(--bg-tertiary)]">${g.name}</span>`).join("")}
             </div>
-            ${localFiles && itemType === "movie" ? `<button class="play-movie-btn mt-4 w-full px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}">Play Movie</button>` : ""}
+            
+            ${localFiles ? `
+                <div class="mt-4 space-y-2">
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                        <div class="bg-green-600 h-2.5 rounded-full" style="width: ${watchedPercentage}%"></div>
+                    </div>
+                    <p class="text-xs text-gray-400">${watchStatus}</p>
+                </div>
+                <div class="flex gap-2 mt-4">
+                    ${itemType === 'movie' ? `
+                        <button class="play-movie-btn flex-1 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}" data-media-id="${mediaId}">
+                            ${watchHistory && watchHistory.watched_duration > 0 ? 'Resume' : 'Play'}
+                        </button>
+                        ${watchHistory && watchHistory.watched_duration > 0 ? `<button class="play-movie-btn flex-1 px-4 py-2 rounded-lg bg-gray-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}" data-media-id="${mediaId}" data-play-from-beginning="true">Play from beginning</button>` : ''}` :
+                        seriesButtons
+                    }
+                </div>
+            ` : ""}
           </div>
         </div>
 
@@ -257,7 +323,7 @@ export class ModalManager {
     `;
   }
 
-  showVideoPlayer(filePath) {
+  showVideoPlayer(filePath, mediaId, watchHistory) {
     this.videoErrorOverlay.classList.add("hidden");
     this.videoErrorOverlay.classList.remove("flex");
 
@@ -289,7 +355,7 @@ export class ModalManager {
           console.log("Close button clicked via onclick");
           e.preventDefault();
           e.stopPropagation();
-          this.hideVideoPlayer();
+          this.hideVideoPlayer(mediaId);
         };
         console.log("Close button event listener re-added");
       }
@@ -297,7 +363,7 @@ export class ModalManager {
 
     try {
       console.log("filePath:", filePath);
-      window.nexusPlayer = new VideoPlayer("video-player", filePath);
+      window.nexusPlayer = new VideoPlayer("video-player", filePath, watchHistory);
     } catch (error) {
       console.error("Failed to initialize VideoPlayer:", error);
       this.videoErrorOverlay.classList.remove("hidden");
@@ -306,11 +372,75 @@ export class ModalManager {
     }
   }
 
-  hideVideoPlayer() {
-    this.videoPlayerModal.classList.remove("visible");
+  async hideVideoPlayer(mediaId) {
     if (window.nexusPlayer && window.nexusPlayer.player) {
-      window.nexusPlayer.player.dispose();
-      window.nexusPlayer = null;
+        const watched_duration = window.nexusPlayer.player.currentTime();
+        const total_duration = window.nexusPlayer.player.duration();
+        const watchHistory = {
+            media_id: mediaId,
+            watched_duration,
+            total_duration,
+            last_watched_timestamp: Date.now(),
+        };
+        await this.updateWatchHistory(watchHistory);
+        window.nexusPlayer.player.dispose();
+        window.nexusPlayer = null;
+    }
+    this.videoPlayerModal.classList.remove("visible");
+    
+    // Refresh the modal to show the updated watch history
+    const parts = mediaId.split('-');
+    const itemType = parts[0];
+    const itemId = parts[1];
+    this.showDetails(itemId, itemType);
+  }
+
+  async getWatchHistory(mediaId) {
+    try {
+        const response = await fetch('/api/get-watch-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mediaId)
+        });
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.error('Error fetching watch history:', error);
+    }
+    return null;
+  }
+
+  async getAllWatchHistory() {
+    try {
+        const response = await fetch('/api/get-all-watch-history');
+        if (response.ok) {
+            return await response.json();
+        }
+    } catch (error) {
+        console.error('Error fetching all watch history:', error);
+    }
+    return {};
+  }
+
+  async findLastWatchedEpisode(seriesId) {
+    const allWatchHistory = await this.getAllWatchHistory();
+    const seriesWatchHistory = Object.values(allWatchHistory).filter(h => h.media_id.startsWith(`tv-${seriesId}-`));
+    if (seriesWatchHistory.length === 0) {
+        return null;
+    }
+    return seriesWatchHistory.sort((a, b) => b.last_watched_timestamp - a.last_watched_timestamp)[0];
+  }
+
+  async updateWatchHistory(watchHistory) {
+    try {
+        await fetch('/api/update-watch-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(watchHistory)
+        });
+    } catch (error) {
+        console.error('Error updating watch history:', error);
     }
   }
 }

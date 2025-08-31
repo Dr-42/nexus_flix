@@ -8,10 +8,11 @@ import { SettingsModal } from '../ui/settings-modal.js';
  * Handles video streaming, audio/subtitle track switching, and controls
  */
 export class VideoPlayer {
-  constructor(videoElementId, videoPath) {
+  constructor(videoElementId, videoPath, watchHistory) {
     this.videoElementId = videoElementId;
     this.videoElement = document.getElementById(videoElementId);
     this.videoPath = encodeURIComponent(videoPath);
+    this.watchHistory = watchHistory;
     this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
     this.audioMimeType = 'audio/mp4 ; codecs="opus"';
     this.mediaSource = null;
@@ -361,9 +362,12 @@ export class VideoPlayer {
     this.mediaSource.addEventListener("sourceopen", async () => {
       await this.loadInitialMetadata();
       this.initVideoJs();
+      if (this.watchHistory) {
+        this.player.currentTime(this.watchHistory.watched_duration);
+      }
       await this.fetchSubtitles();
       await this.initializeSourceBuffer();
-      await this.fetchVideoChunk(0.0);
+      await this.fetchVideoChunk(this.watchHistory ? this.watchHistory.watched_duration : 0.0);
     });
   }
 
@@ -413,6 +417,10 @@ export class VideoPlayer {
           this.videoElement.currentTime = newTime + 0.3;
         }
       }
+    });
+
+    this.videoElement.addEventListener("ended", () => {
+        // Autoplay logic here
     });
   }
 
