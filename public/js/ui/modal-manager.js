@@ -4,127 +4,129 @@ import { VideoPlayer } from "../video-player/video-player.js";
  * Modal management for media details and video player
  */
 export class ModalManager {
-  constructor(tmdbApi, localFileDatabase) {
-    this.tmdbApi = tmdbApi;
-    this.localFileDatabase = localFileDatabase;
+	constructor(tmdbApi, localFileDatabase) {
+		this.tmdbApi = tmdbApi;
+		this.localFileDatabase = localFileDatabase;
 
-    this.modal = document.getElementById("details-modal");
-    this.modalContent = document.getElementById("modal-content");
-    this.videoPlayerModal = document.getElementById("video-player-modal");
-    this.videoPlayerContent = document.getElementById("video-player-content");
-    this.videoCloseBtn = document.getElementById("video-close-btn");
-    this.videoErrorOverlay = document.getElementById("video-error-overlay");
+		this.modal = document.getElementById("details-modal");
+		this.modalContent = document.getElementById("modal-content");
+		this.videoPlayerModal = document.getElementById("video-player-modal");
+		this.videoPlayerContent = document.getElementById("video-player-content");
+		this.videoCloseBtn = document.getElementById("video-close-btn");
+		this.videoErrorOverlay = document.getElementById("video-error-overlay");
 
-    // Note: nexusPlayer is now a global variable for compatibility
+		// Note: nexusPlayer is now a global variable for compatibility
 
-    this.initializeEventListeners();
-  }
+		this.initializeEventListeners();
+	}
 
-  initializeEventListeners() {
-    // Details modal close
-    this.modal.addEventListener("click", (e) => {
-      if (e.target.closest(".modal-close-btn") || e.target === this.modal) {
-        this.hideModal();
-      }
-    });
+	initializeEventListeners() {
+		// Details modal close
+		this.modal.addEventListener("click", (e) => {
+			if (e.target.closest(".modal-close-btn") || e.target === this.modal) {
+				this.hideModal();
+			}
+		});
 
-    // Video player modal close
-    if (this.videoCloseBtn) {
-      this.videoCloseBtn.addEventListener("click", (e) => {
-        console.log("Close button clicked");
-        e.preventDefault();
-        e.stopPropagation();
-        this.hideVideoPlayer();
-      });
-    } else {
-      console.warn("Video close button not found");
-    }
+		// Video player modal close
+		if (this.videoCloseBtn) {
+			this.videoCloseBtn.addEventListener("click", (e) => {
+				console.log("Close button clicked");
+				e.preventDefault();
+				e.stopPropagation();
+				this.hideVideoPlayer();
+			});
+		} else {
+			console.warn("Video close button not found");
+		}
 
-    this.videoPlayerModal.addEventListener("click", (e) => {
-      if (e.target === this.videoPlayerModal) {
-        this.hideVideoPlayer();
-      }
-    });
+		this.videoPlayerModal.addEventListener("click", (e) => {
+			if (e.target === this.videoPlayerModal) {
+				this.hideVideoPlayer();
+			}
+		});
 
-    // Add keyboard shortcut to close video player
-    document.addEventListener("keydown", (e) => {
-      if (
-        e.key === "Escape" &&
-        this.videoPlayerModal.classList.contains("visible")
-      ) {
-        this.hideVideoPlayer();
-      }
-    });
-  }
+		// Add keyboard shortcut to close video player
+		document.addEventListener("keydown", (e) => {
+			if (
+				e.key === "Escape" &&
+				this.videoPlayerModal.classList.contains("visible")
+			) {
+				this.hideVideoPlayer();
+			}
+		});
+	}
 
-  showModal() {
-    this.modal.classList.add("visible");
-  }
+	showModal() {
+		this.modal.classList.add("visible");
+	}
 
-  hideModal() {
-    this.modal.classList.remove("visible");
-  }
+	hideModal() {
+		this.modal.classList.remove("visible");
+	}
 
-  async showDetails(itemId, itemType) {
-    console.log('Showing details for', itemType, itemId);
-    this.showModal();
-    this.modalContent.innerHTML = `<div class="flex justify-center items-center h-96"><div class="loader"></div></div>`;
-    const dbKey = `${itemType}-${itemId}`;
-    const localFiles = this.localFileDatabase[dbKey];
+	async showDetails(itemId, itemType) {
+		console.log('Showing details for', itemType, itemId);
+		this.showModal();
+		this.modalContent.innerHTML = `<div class="flex justify-center items-center h-96"><div class="loader"></div></div>`;
+		const dbKey = `${itemType}-${itemId}`;
+		const localFiles = this.localFileDatabase[dbKey];
 
-    try {
-      const item = await this.tmdbApi.fetchFromBackend(`${itemType}/${itemId}`, {
-        append_to_response: "credits,videos,recommendations",
-      });
+		try {
+			const item = await this.tmdbApi.fetchFromBackend(`${itemType}/${itemId}`, {
+				append_to_response: "credits,videos,recommendations",
+			});
 
-      let watchHistory = null;
-      if (itemType === 'movie') {
-        watchHistory = await this.getWatchHistory(dbKey);
-      } else if (itemType === 'tv') {
-        watchHistory = await this.findLastWatchedEpisode(itemId);
-      }
+			let watchHistory = null;
+			if (itemType === 'movie') {
+				watchHistory = await this.getWatchHistory(dbKey);
+			} else if (itemType === 'tv') {
+				watchHistory = await this.findLastWatchedEpisode(itemId);
+			}
 
-      const title = item.title || item.name;
-      const backdropPath =
-        this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
-      const posterPath =
-        this.tmdbApi.getImageUrl(item.poster_path) ||
-        this.tmdbApi.getPlaceholderImage();
+			const title = item.title || item.name;
+			const backdropPath =
+				this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
+			const posterPath =
+				this.tmdbApi.getImageUrl(item.poster_path) ||
+				this.tmdbApi.getPlaceholderImage();
 
-      let seasonsHTML = "";
-      if (itemType === "tv" && item.seasons) {
-        seasonsHTML = await this.generateSeasonsHTML(item, itemId, localFiles);
-      }
+			let seasonsHTML = "";
+			if (itemType === "tv" && item.seasons) {
+				seasonsHTML = await this.generateSeasonsHTML(item, itemId, localFiles);
+			}
 
-      this.modalContent.innerHTML = this.generateModalHTML(
-        item,
-        title,
-        backdropPath,
-        posterPath,
-        localFiles,
-        itemType,
-        seasonsHTML,
-        watchHistory
-      );
-      lucide.createIcons();
-    } catch (error) {
-      console.error(`Failed to load details for ${itemType}/${itemId}:`, error);
-      this.modalContent.innerHTML = `<div class="p-6 text-center text-red-400">Error loading details. ${error.message}</div>`;
-    }
-  }
+			this.modalContent.innerHTML = this.generateModalHTML(
+				item,
+				title,
+				backdropPath,
+				posterPath,
+				localFiles,
+				itemType,
+				seasonsHTML,
+				watchHistory
+			);
+			lucide.createIcons();
+		} catch (error) {
+			console.error(`Failed to load details for ${itemType}/${itemId}:`, error);
+			this.modalContent.innerHTML = `<div class="p-6 text-center text-red-400">Error loading details. ${error.message}</div>`;
+		}
+	}
 
-  async generateSeasonsHTML(item, itemId, localFiles) {
-    const seasonPromises = item.seasons
-      .filter((s) => s.season_number > 0 && s.episode_count > 0) // Exclude "Specials" and empty seasons
-      .map((s) => this.tmdbApi.fetchFromBackend(`tv/${itemId}/season/${s.season_number}`));
-    const seasonsDetails = await Promise.all(seasonPromises);
+	async generateSeasonsHTML(item, itemId, localFiles) {
+		const allWatchHistory = await this.getAllWatchHistory();
 
-    return (
-      `<div class="space-y-2 mt-4">` +
-      seasonsDetails
-        .map((season) => {
-          if (!season || !season.episodes) return "";
-          return `
+		const seasonPromises = item.seasons
+			.filter((s) => s.season_number > 0 && s.episode_count > 0) // Exclude "Specials" and empty seasons
+			.map((s) => this.tmdbApi.fetchFromBackend(`tv/${itemId}/season/${s.season_number}`));
+		const seasonsDetails = await Promise.all(seasonPromises);
+
+		return (
+			`<div class="space-y-2 mt-4">` +
+			seasonsDetails
+				.map((season) => {
+					if (!season || !season.episodes) return "";
+					return `
             <div>
               <button class="season-accordion-btn flex justify-between items-center w-full">
                 <span>${season.name}</span>
@@ -133,98 +135,104 @@ export class ModalManager {
               <div class="episode-list bg-black/20 p-2 rounded-b-lg">
                 <ul class="space-y-2">
                   ${season.episodes
-                    .map((ep) => {
-                      const episodeFile = localFiles
-                        ? localFiles[
-                            `${season.season_number}-${ep.episode_number}`
-                          ]
-                        : null;
-                      const mediaId = `${item.id}-${season.season_number}-${ep.episode_number}`;
-                      return `
+							.map((ep) => {
+								const episodeFile = localFiles
+									? localFiles[
+									`${season.season_number}-${ep.episode_number}`
+									]
+									: null;
+								const mediaId = `tv-${item.id}-${season.season_number}-${ep.episode_number}`;
+								const episodeWatchHistory = allWatchHistory[mediaId];
+								const watchedPercentage = episodeWatchHistory && episodeWatchHistory.total_duration > 0 ? (episodeWatchHistory.watched_duration / episodeWatchHistory.total_duration) * 100 : 0;
+
+								return `
                         <li class="p-2 flex justify-between items-center rounded-md hover:bg-black/20">
                           <div class="flex-1 mr-4">
                             <span class="font-bold">${ep.episode_number}. ${ep.name}</span>
                             <p class="text-xs text-gray-400 mt-1 line-clamp-2">${ep.overview}</p>
                             <div class="w-full bg-gray-700 rounded-full h-1.5 mt-2">
-                                <div class="bg-green-600 h-1.5 rounded-full" id="progress-${mediaId}" style="width: 0%"></div>
+                                <div class="bg-green-600 h-1.5 rounded-full" id="progress-${mediaId}" style="width: ${watchedPercentage}%"></div>
                             </div>
                           </div>
                           <button class="play-episode-btn flex-shrink-0 px-3 py-1 rounded ${episodeFile ? "bg-green-600 hover:bg-green-500" : "bg-gray-600 cursor-not-allowed"}" ${episodeFile ? `data-path="${episodeFile}" data-media-id="${mediaId}"` : "disabled"}>Play</button>
                         </li>
                       `;
-                    })
-                    .join("")}
+							})
+							.join("")}
                 </ul>
               </div>
             </div>
           `;
-        })
-        .join("") +
-      `</div>`
-    );
-  }
+				})
+				.join("") +
+			`</div>`
+		);
+	}
 
-  generateModalHTML(
-    item,
-    title,
-    backdropPath,
-    posterPath,
-    localFiles,
-    itemType,
-    seasonsHTML,
-    watchHistory
-  ) {
-    const trailer = item.videos?.results.find(
-      (video) => video.type === "Trailer" && video.site === "YouTube",
-    );
+	generateModalHTML(
+		item,
+		title,
+		backdropPath,
+		posterPath,
+		localFiles,
+		itemType,
+		seasonsHTML,
+		watchHistory
+	) {
+		const trailer = item.videos?.results.find(
+			(video) => video.type === "Trailer" && video.site === "YouTube",
+		);
 
-    const mediaId = `${itemType}-${item.id}`;
-    const watchedPercentage = watchHistory && watchHistory.total_duration > 0 ? (watchHistory.watched_duration / watchHistory.total_duration) * 100 : 0;
+		const mediaId = `${itemType}-${item.id}`;
+		const watchedPercentage = watchHistory && watchHistory.total_duration > 0 ? (watchHistory.watched_duration / watchHistory.total_duration) * 100 : 0;
 
-    const formatTime = (seconds) => {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
-        return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
-    };
+		const formatTime = (seconds) => {
+			const h = Math.floor(seconds / 3600);
+			const m = Math.floor((seconds % 3600) / 60);
+			const s = Math.floor(seconds % 60);
+			return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+		};
 
-    let watchStatus = '';
-    if (watchHistory && watchHistory.total_duration > 0) {
-        const timeStatus = `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}`;
-        if (itemType === 'tv') {
-            const parts = watchHistory.media_id.split('-');
-            const season = parts[2];
-            const episode = parts[3];
-            watchStatus = `Season ${season} Episode ${episode} ${timeStatus}`;
-        } else {
-            watchStatus = timeStatus;
-        }
-    }
+		let watchStatus = '';
+		if (watchHistory && watchHistory.total_duration > 0) {
+			const timeStatus = `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}`;
+			if (itemType === 'tv') {
+				const parts = watchHistory.media_id.split('-');
+				const season = parts[2];
+				const episode = parts[3];
+				watchStatus = `Season ${season} Episode ${episode} ${timeStatus}`;
+			} else {
+				watchStatus = timeStatus;
+			}
+		}
 
-    let seriesButtons = '';
-    if (itemType === 'tv' && localFiles) {
-        const lastWatchedEpisodeHistory = watchHistory;
-        let resumeBtnPath = '';
-        let resumeBtnMediaId = '';
-        if (lastWatchedEpisodeHistory) {
-            const parts = lastWatchedEpisodeHistory.media_id.split('-');
-            const season = parts[2];
-            const episode = parts[3];
-            resumeBtnPath = localFiles[`${season}-${episode}`];
-            resumeBtnMediaId = lastWatchedEpisodeHistory.media_id;
-        }
+		let seriesButtons = '';
+		if (itemType === 'tv' && localFiles) {
+			const lastWatchedEpisodeHistory = watchHistory;
+			let resumeBtnPath = '';
+			let resumeBtnMediaId = '';
+			if (lastWatchedEpisodeHistory) {
+				const parts = lastWatchedEpisodeHistory.media_id.split('-');
+				const season = parts[2];
+				const episode = parts[3];
+				resumeBtnPath = localFiles[`${season}-${episode}`];
+				resumeBtnMediaId = lastWatchedEpisodeHistory.media_id;
+			}
 
-        seriesButtons = `
+			seriesButtons = `
             <button class="resume-series-btn flex-1 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" ${resumeBtnPath ? `data-path="${resumeBtnPath}" data-media-id="${resumeBtnMediaId}"` : 'disabled'}>Resume</button>
             <button class="next-episode-btn flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:opacity-90 transition-opacity" data-series-id="${item.id}" ${lastWatchedEpisodeHistory ? `data-last-watched-episode="${lastWatchedEpisodeHistory.media_id}"` : ''}>Next Episode</button>
             <label class="flex items-center gap-2 text-sm">
-                <input type="checkbox" id="play-random-episode-toggle" class="form-checkbox h-5 w-5 text-green-600 bg-gray-800 border-gray-600 rounded focus:ring-green-500">
+                <div class="switch">
+                    <input type="checkbox" id="play-random-episode-toggle">
+                    <span class="slider round"></span>
+                </div>
                 Play random
             </label>
         `;
-    }
+		}
 
-    return `
+		return `
       <div class="relative">
         <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
         <img src="${backdropPath}" class="w-full h-48 md:h-80 object-cover" onerror="this.style.display='none'">
@@ -258,8 +266,8 @@ export class ModalManager {
                             ${watchHistory && watchHistory.watched_duration > 0 ? 'Resume' : 'Play'}
                         </button>
                         ${watchHistory && watchHistory.watched_duration > 0 ? `<button class="play-movie-btn flex-1 px-4 py-2 rounded-lg bg-gray-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}" data-media-id="${mediaId}" data-play-from-beginning="true">Play from beginning</button>` : ''}` :
-                        seriesButtons
-                    }
+					seriesButtons
+				}
                 </div>
             ` : ""}
           </div>
@@ -271,9 +279,8 @@ export class ModalManager {
           ${seasonsHTML}
         </div>
 
-        ${
-          trailer
-            ? `
+        ${trailer
+				? `
         <div class="pt-6 border-t border-[color:var(--border-color)]">
             <h3 class="font-semibold text-lg mb-4">Trailer</h3>
             <div class="aspect-video">
@@ -287,44 +294,42 @@ export class ModalManager {
             </div>
         </div>
         `
-            : ""
-        }
+				: ""
+			}
 
         <div class="flex flex-wrap gap-4">
-          ${
-            this.localFileDatabase[`${itemType}-${item.id}`]
-              ? `<button id="change-tmdb-btn" data-id="${item.id}" data-type="${itemType}" data-title="${title.replace(/"/g, "&quot;")}" class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:opacity-90 transition-opacity">Change TMDB Match</button>`
-              : ""
-          }
+          ${this.localFileDatabase[`${itemType}-${item.id}`]
+				? `<button id="change-tmdb-btn" data-id="${item.id}" data-type="${itemType}" data-title="${title.replace(/"/g, "&quot;")}" class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:opacity-90 transition-opacity">Change TMDB Match</button>`
+				: ""
+			}
         </div>
 
         <div id="similar-section" class="pt-6 border-t border-[color:var(--border-color)]">
-          ${
-            item.recommendations?.results.length > 0
-              ? `
+          ${item.recommendations?.results.length > 0
+				? `
                 <h3 class="font-semibold text-lg mb-4">Similar Titles</h3>
                 <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results
-                  .slice(0, 6)
-                  .map((rec) => this.createMediaCard(rec))
-                  .join("")}</div>
+					.slice(0, 6)
+					.map((rec) => this.createMediaCard(rec))
+					.join("")}</div>
               `
-              : `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
-          }
+				: `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
+			}
         </div>
       </div>
       <div id="tmdb-change-interface" class="hidden p-6 space-y-4"></div>
     `;
-  }
+	}
 
-  createMediaCard(item) {
-    // Simple media card for recommendations - could be extracted to MediaCardRenderer
-    const title = item.title || item.name;
-    const posterPath =
-      this.tmdbApi.getImageUrl(item.poster_path) ||
-      this.tmdbApi.getPlaceholderImage();
-    const itemType = item.media_type || (item.title ? "movie" : "tv");
+	createMediaCard(item) {
+		// Simple media card for recommendations - could be extracted to MediaCardRenderer
+		const title = item.title || item.name;
+		const posterPath =
+			this.tmdbApi.getImageUrl(item.poster_path) ||
+			this.tmdbApi.getPlaceholderImage();
+		const itemType = item.media_type || (item.title ? "movie" : "tv");
 
-    return `
+		return `
       <div class="media-card group overflow-hidden relative shadow-lg aspect-[2/3]" data-id="${item.id}" data-type="${itemType}">
         <img src="${posterPath}" alt="${title}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
         <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
@@ -333,130 +338,585 @@ export class ModalManager {
         </div>
       </div>
     `;
-  }
+	}
 
-  showVideoPlayer(filePath, mediaId, watchHistory) {
-    this.videoErrorOverlay.classList.add("hidden");
-    this.videoErrorOverlay.classList.remove("flex");
+	showVideoPlayer(filePath, mediaId, watchHistory) {
+		this.videoErrorOverlay.classList.add("hidden");
+		this.videoErrorOverlay.classList.remove("flex");
 
-    if (window.nexusPlayer && window.nexusPlayer.player) {
-      window.nexusPlayer.player.dispose();
-      window.nexusPlayer = null;
-    }
+		if (window.nexusPlayer && window.nexusPlayer.player) {
+			window.nexusPlayer.player.dispose();
+			window.nexusPlayer = null;
+		}
 
-    const existingPlayerEl = document.getElementById("video-player");
-    if (existingPlayerEl) {
-      existingPlayerEl.remove();
-    }
+		const existingPlayerEl = document.getElementById("video-player");
+		if (existingPlayerEl) {
+			existingPlayerEl.remove();
+		}
 
-    const videoEl = document.createElement("video");
-    videoEl.id = "video-player";
-    videoEl.className = "video-js vjs-midnight-skin vjs-big-play-centered";
-    videoEl.style.width = "100%";
-    videoEl.style.height = "100%";
+		const videoEl = document.createElement("video");
+		videoEl.id = "video-player";
+		videoEl.className = "video-js vjs-midnight-skin vjs-big-play-centered";
+		videoEl.style.width = "100%";
+		videoEl.style.height = "100%";
 
-    this.videoPlayerContent.insertBefore(videoEl, this.videoErrorOverlay);
-    this.videoPlayerModal.classList.add("visible");
+		this.videoPlayerContent.insertBefore(videoEl, this.videoErrorOverlay);
+		this.videoPlayerModal.classList.add("visible");
 
-    // Ensure close button is working by re-adding event listener
-    setTimeout(() => {
-      const closeBtn = document.getElementById("video-close-btn");
-      if (closeBtn) {
-        // Remove any existing listeners and add a new one
-        closeBtn.onclick = (e) => {
-          console.log("Close button clicked via onclick");
-          e.preventDefault();
-          e.stopPropagation();
-          this.hideVideoPlayer(mediaId);
-        };
-        console.log("Close button event listener re-added");
-      }
-    }, 100);
+		// Ensure close button is working by re-adding event listener
+		setTimeout(() => {
+			const closeBtn = document.getElementById("video-close-btn");
+			if (closeBtn) {
+				// Remove any existing listeners and add a new one
+				closeBtn.onclick = (e) => {
+					console.log("Close button clicked via onclick");
+					e.preventDefault();
+					e.stopPropagation();
+					this.hideVideoPlayer(mediaId);
+				};
+				console.log("Close button event listener re-added");
+			}
+		}, 100);
 
-    try {
-      console.log("filePath:", filePath);
-      window.nexusPlayer = new VideoPlayer("video-player", filePath, watchHistory);
-    } catch (error) {
-      console.error("Failed to initialize VideoPlayer:", error);
-      this.videoErrorOverlay.classList.remove("hidden");
-      this.videoErrorOverlay.classList.add("flex");
-      lucide.createIcons();
-    }
-  }
+		try {
+			console.log("filePath:", filePath);
+			window.nexusPlayer = new VideoPlayer("video-player", filePath, watchHistory);
+		} catch (error) {
+			console.error("Failed to initialize VideoPlayer:", error);
+			this.videoErrorOverlay.classList.remove("hidden");
+			this.videoErrorOverlay.classList.add("flex");
+			lucide.createIcons();
+		}
+	}
 
-  async hideVideoPlayer(mediaId) {
-    console.log('Hiding video player for', mediaId);
-    if (window.nexusPlayer && window.nexusPlayer.player) {
-        const watched_duration = window.nexusPlayer.player.currentTime();
-        const total_duration = window.nexusPlayer.player.duration();
-        const watchHistory = {
-            media_id: mediaId,
-            watched_duration,
-            total_duration,
-            last_watched_timestamp: Date.now(),
-        };
-        console.log('Updating watch history:', watchHistory);
-        await this.updateWatchHistory(watchHistory);
-        console.log('Watch history updated.');
-        window.nexusPlayer.player.dispose();
-        window.nexusPlayer = null;
-    }
-    this.videoPlayerModal.classList.remove("visible");
-    
-    // Refresh the modal to show the updated watch history
-    const parts = mediaId.split('-');
-    const itemType = parts[0];
-    const itemId = parts[1];
-    console.log('Refreshing details for', itemType, itemId);
-    this.showDetails(itemId, itemType);
-  }
+	initializeEventListeners() {
+		// Details modal close
+		this.modal.addEventListener("click", (e) => {
+			if (e.target.closest(".modal-close-btn") || e.target === this.modal) {
+				this.hideModal();
+			}
+		});
 
-  async getWatchHistory(mediaId) {
-    try {
-        const response = await fetch('/api/get-watch-history', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(mediaId)
-        });
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (error) {
-        console.error('Error fetching watch history:', error);
-    }
-    return null;
-  }
+		// Video player modal close
+		if (this.videoCloseBtn) {
+			this.videoCloseBtn.addEventListener("click", (e) => {
+				console.log("Close button clicked");
+				e.preventDefault();
+				e.stopPropagation();
+				this.hideVideoPlayer(this.currentlyPlayingMediaId);
+			});
+		} else {
+			console.warn("Video close button not found");
+		}
 
-  async getAllWatchHistory() {
-    try {
-        const response = await fetch('/api/get-all-watch-history');
-        if (response.ok) {
-            return await response.json();
-        }
-    } catch (error) {
-        console.error('Error fetching all watch history:', error);
-    }
-    return {};
-  }
+		this.videoPlayerModal.addEventListener("click", (e) => {
+			if (e.target === this.videoPlayerModal) {
+				this.hideVideoPlayer(this.currentlyPlayingMediaId);
+			}
+		});
 
-  async findLastWatchedEpisode(seriesId) {
-    const allWatchHistory = await this.getAllWatchHistory();
-    const seriesWatchHistory = Object.values(allWatchHistory).filter(h => h.media_id.startsWith(`tv-${seriesId}-`));
-    if (seriesWatchHistory.length === 0) {
-        return null;
-    }
-    return seriesWatchHistory.sort((a, b) => b.last_watched_timestamp - a.last_watched_timestamp)[0];
-  }
+		// Add keyboard shortcut to close video player
+		document.addEventListener("keydown", (e) => {
+			if (
+				e.key === "Escape" &&
+				this.videoPlayerModal.classList.contains("visible")
+			) {
+				this.hideVideoPlayer(this.currentlyPlayingMediaId);
+			}
+		});
 
-  async updateWatchHistory(watchHistory) {
-    try {
-        await fetch('/api/update-watch-history', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(watchHistory)
-        });
-    } catch (error) {
-        console.error('Error updating watch history:', error);
-    }
-  }
+		document.addEventListener('watchHistoryUpdated', (e) => this.handleWatchHistoryUpdate(e));
+	}
+
+	showModal() {
+		this.modal.classList.add("visible");
+	}
+
+	hideModal() {
+		this.modal.classList.remove("visible");
+	}
+
+	async showDetails(itemId, itemType) {
+		console.log('Showing details for', itemType, itemId);
+		this.showModal();
+		this.modalContent.innerHTML = `<div class="flex justify-center items-center h-96"><div class="loader"></div></div>`;
+		const dbKey = `${itemType}-${itemId}`;
+		const localFiles = this.localFileDatabase[dbKey];
+
+		try {
+			const item = await this.tmdbApi.fetchFromBackend(`${itemType}/${itemId}`, {
+				append_to_response: "credits,videos,recommendations",
+			});
+
+			let watchHistory = null;
+			if (itemType === 'movie') {
+				watchHistory = await this.getWatchHistory(dbKey);
+			} else if (itemType === 'tv') {
+				watchHistory = await this.findLastWatchedEpisode(itemId);
+			}
+
+			const title = item.title || item.name;
+			const backdropPath =
+				this.tmdbApi.getImageUrl(item.backdrop_path, "w1280") || "";
+			const posterPath =
+				this.tmdbApi.getImageUrl(item.poster_path) ||
+				this.tmdbApi.getPlaceholderImage();
+
+			let seasonsHTML = "";
+			if (itemType === "tv" && item.seasons) {
+				seasonsHTML = await this.generateSeasonsHTML(item, itemId, localFiles);
+			}
+
+			this.modalContent.innerHTML = this.generateModalHTML(
+				item,
+				title,
+				backdropPath,
+				posterPath,
+				localFiles,
+				itemType,
+				seasonsHTML,
+				watchHistory
+			);
+			lucide.createIcons();
+		} catch (error) {
+			console.error(`Failed to load details for ${itemType}/${itemId}:`, error);
+			this.modalContent.innerHTML = `<div class="p-6 text-center text-red-400">Error loading details. ${error.message}</div>`;
+		}
+	}
+
+	async generateSeasonsHTML(item, itemId, localFiles) {
+		const allWatchHistory = await this.getAllWatchHistory();
+
+		const seasonPromises = item.seasons
+			.filter((s) => s.season_number > 0 && s.episode_count > 0) // Exclude "Specials" and empty seasons
+			.map((s) => this.tmdbApi.fetchFromBackend(`tv/${itemId}/season/${s.season_number}`));
+		const seasonsDetails = await Promise.all(seasonPromises);
+
+		return (
+			`<div class="space-y-2 mt-4">` +
+			seasonsDetails
+				.map((season) => {
+					if (!season || !season.episodes) return "";
+					return `
+            <div>
+              <button class="season-accordion-btn flex justify-between items-center w-full">
+                <span>${season.name}</span>
+                <i data-lucide="chevron-down" class="w-5 h-5 transition-transform"></i>
+              </button>
+              <div class="episode-list bg-black/20 p-2 rounded-b-lg">
+                <ul class="space-y-2">
+                  ${season.episodes
+							.map((ep) => {
+								const episodeFile = localFiles
+									? localFiles[
+									`${season.season_number}-${ep.episode_number}`
+									]
+									: null;
+								const mediaId = `tv-${item.id}-${season.season_number}-${ep.episode_number}`;
+								const episodeWatchHistory = allWatchHistory[mediaId];
+								const watchedPercentage = episodeWatchHistory && episodeWatchHistory.total_duration > 0 ? (episodeWatchHistory.watched_duration / episodeWatchHistory.total_duration) * 100 : 0;
+
+								return `
+                        <li class="p-2 flex justify-between items-center rounded-md hover:bg-black/20">
+                          <div class="flex-1 mr-4">
+                            <span class="font-bold">${ep.episode_number}. ${ep.name}</span>
+                            <p class="text-xs text-gray-400 mt-1 line-clamp-2">${ep.overview}</p>
+                            <div class="w-full bg-gray-700 rounded-full h-1.5 mt-2">
+                                <div class="bg-green-600 h-1.5 rounded-full" id="progress-${mediaId}" style="width: ${watchedPercentage}%"></div>
+                            </div>
+                          </div>
+                          <button class="play-episode-btn flex-shrink-0 px-3 py-1 rounded ${episodeFile ? "bg-green-600 hover:bg-green-500" : "bg-gray-600 cursor-not-allowed"}" ${episodeFile ? `data-path="${episodeFile}" data-media-id="${mediaId}"` : "disabled"}>Play</button>
+                        </li>
+                      `;
+							})
+							.join("")}
+                </ul>
+              </div>
+            </div>
+          `;
+				})
+				.join("") +
+			`</div>`
+		);
+	}
+
+	generateModalHTML(
+		item,
+		title,
+		backdropPath,
+		posterPath,
+		localFiles,
+		itemType,
+		seasonsHTML,
+		watchHistory
+	) {
+		const trailer = item.videos?.results.find(
+			(video) => video.type === "Trailer" && video.site === "YouTube",
+		);
+
+		const mediaId = `${itemType}-${item.id}`;
+		const watchedPercentage = watchHistory && watchHistory.total_duration > 0 ? (watchHistory.watched_duration / watchHistory.total_duration) * 100 : 0;
+
+		const formatTime = (seconds) => {
+			const h = Math.floor(seconds / 3600);
+			const m = Math.floor((seconds % 3600) / 60);
+			const s = Math.floor(seconds % 60);
+			return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+		};
+
+		let watchStatus = '';
+		if (watchHistory && watchHistory.total_duration > 0) {
+			const timeStatus = `at ${formatTime(watchHistory.watched_duration)} of ${formatTime(watchHistory.total_duration)}`;
+			if (itemType === 'tv') {
+				const parts = watchHistory.media_id.split('-');
+				const season = parts[2];
+				const episode = parts[3];
+				watchStatus = `Season ${season} Episode ${episode} ${timeStatus}`;
+			} else {
+				watchStatus = timeStatus;
+			}
+		}
+
+		let seriesButtons = '';
+		if (itemType === 'tv' && localFiles) {
+			const lastWatchedEpisodeHistory = watchHistory;
+			let resumeBtnPath = '';
+			let resumeBtnMediaId = '';
+			            if (lastWatchedEpisodeHistory) {
+                const parts = lastWatchedEpisodeHistory.media_id.split('-');
+                const season = parts[2];
+                const episode = parts[3];
+                resumeBtnPath = localFiles[`${season}-${episode}`];
+                resumeBtnMediaId = lastWatchedEpisodeHistory.media_id;
+            }
+
+			seriesButtons = `
+            <button class="resume-series-btn flex-1 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" ${resumeBtnPath ? `data-path="${resumeBtnPath}" data-media-id="${resumeBtnMediaId}"` : 'disabled'}>Resume</button>
+            <button class="next-episode-btn flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:opacity-90 transition-opacity" data-series-id="${item.id}" ${lastWatchedEpisodeHistory ? `data-last-watched-episode="${lastWatchedEpisodeHistory.media_id}"` : ''}>Next Episode</button>
+            <label class="flex items-center gap-2 text-sm">
+                <div class="switch">
+                    <input type="checkbox" id="play-random-episode-toggle">
+                    <span class="slider round"></span>
+                </div>
+                Play random
+            </label>
+        `;
+		}
+
+		return `
+      <div class="relative">
+        <button class="modal-close-btn"><i data-lucide="x" class="w-6 h-6"></i></button>
+        <img src="${backdropPath}" class="w-full h-48 md:h-80 object-cover" onerror="this.style.display='none'">
+        <div class="absolute inset-0 bg-gradient-to-t from-[color:var(--bg-secondary)] via-[color:var(--bg-secondary)]/70 to-transparent"></div>
+      </div>
+
+      <div id="details-view" class="p-6 space-y-6 -mt-24 relative">
+        <div class="flex flex-col md:flex-row gap-6">
+          <img src="${posterPath}" class="w-1/3 max-w-[200px] h-auto rounded-lg shadow-2xl self-center md:self-start" onerror="this.onerror=null;this.src='${this.tmdbApi.getPlaceholderImage()}';">
+          <div class="flex-1 pt-8">
+            <h2 class="text-3xl lg:text-4xl font-bold text-[color:var(--text-primary)]">${title}</h2>
+            <div class="flex items-center gap-4 mt-2 text-[color:var(--text-secondary)]">
+              <span>${(item.release_date || item.first_air_date || "").substring(0, 4)}</span>
+              <span class="flex items-center gap-1"><i data-lucide="star" class="w-4 h-4 text-yellow-400 fill-current"></i> ${item.vote_average.toFixed(1)}</span>
+              ${item.number_of_seasons ? `<span>${item.number_of_seasons} Seasons</span>` : ""}
+            </div>
+            <div class="flex flex-wrap gap-2 mt-4">
+              ${item.genres.map((g) => `<span class="px-3 py-1 text-xs rounded-full bg-[color:var(--bg-tertiary)]">${g.name}</span>`).join("")}
+            </div>
+            
+            ${localFiles ? `
+                <div class="mt-4 space-y-2">
+                    <div class="w-full bg-gray-700 rounded-full h-2.5">
+                        <div id="progress-${mediaId}" class="bg-green-600 h-2.5 rounded-full" style="width: ${watchedPercentage}%"></div>
+                    </div>
+                    <p id="watch-status-${mediaId}" class="text-xs text-gray-400">${watchStatus}</p>
+                </div>
+                <div class="flex gap-2 mt-4">
+                    ${itemType === 'movie' ? `
+                        <button class="play-movie-btn flex-1 px-4 py-2 rounded-lg bg-green-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}" data-media-id="${mediaId}">
+                            ${watchHistory && watchHistory.watched_duration > 0 ? 'Resume' : 'Play'}
+                        </button>
+                        ${watchHistory && watchHistory.watched_duration > 0 ? `<button class="play-movie-btn flex-1 px-4 py-2 rounded-lg bg-gray-600 text-white font-semibold hover:opacity-90 transition-opacity" data-path="${localFiles}" data-media-id="${mediaId}" data-play-from-beginning="true">Play from beginning</button>` : ''}` :
+					seriesButtons
+				}
+                </div>
+            ` : ""}
+          </div>
+        </div>
+
+        <div>
+          <h3 class="font-semibold text-lg mb-2">Overview</h3>
+          <p class="text-[color:var(--text-secondary)] leading-relaxed">${item.overview}</p>
+          ${seasonsHTML}
+        </div>
+
+        ${trailer
+				? `
+        <div class="pt-6 border-t border-[color:var(--border-color)]">
+            <h3 class="font-semibold text-lg mb-4">Trailer</h3>
+            <div class="aspect-video">
+                <iframe 
+                    src="https://www.youtube.com/embed/${trailer.key}" 
+                    frameborder="0" 
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                    allowfullscreen
+                    class="w-full h-full rounded-lg"
+                ></iframe>
+            </div>
+        </div>
+        `
+				: ""
+			}
+
+        <div class="flex flex-wrap gap-4">
+          ${this.localFileDatabase[`${itemType}-${item.id}`]
+				? `<button id="change-tmdb-btn" data-id="${item.id}" data-type="${itemType}" data-title="${title.replace(/"/g, "&quot;")}" class="flex-1 px-4 py-2 rounded-lg bg-orange-600 text-white font-semibold hover:opacity-90 transition-opacity">Change TMDB Match</button>`
+				: ""
+			}
+        </div>
+
+        <div id="similar-section" class="pt-6 border-t border-[color:var(--border-color)]">
+          ${item.recommendations?.results.length > 0
+				? `
+                <h3 class="font-semibold text-lg mb-4">Similar Titles</h3>
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-4">${item.recommendations.results
+					.slice(0, 6)
+					.map((rec) => this.createMediaCard(rec))
+					.join("")}</div>
+              `
+				: `<p class="text-center text-[color:var(--text-secondary)]">No similar titles found.</p>`
+			}
+        </div>
+      </div>
+      <div id="tmdb-change-interface" class="hidden p-6 space-y-4"></div>
+    `;
+	}
+
+	createMediaCard(item) {
+		// Simple media card for recommendations - could be extracted to MediaCardRenderer
+		const title = item.title || item.name;
+		const posterPath =
+			this.tmdbApi.getImageUrl(item.poster_path) ||
+			this.tmdbApi.getPlaceholderImage();
+		const itemType = item.media_type || (item.title ? "movie" : "tv");
+
+		return `
+      <div class="media-card group overflow-hidden relative shadow-lg aspect-[2/3]" data-id="${item.id}" data-type="${itemType}">
+        <img src="${posterPath}" alt="${title}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <h4 class="font-bold text-white text-sm drop-shadow-md">${title}</h4>
+          <button class="details-btn mt-1 text-xs bg-white/20 backdrop-blur-sm text-white px-2 py-1 rounded-md hover:bg-white/30 transition-colors w-full">Details</button>
+        </div>
+      </div>
+    `;
+	}
+
+	showVideoPlayer(filePath, mediaId, watchHistory) {
+		this.currentlyPlayingMediaId = mediaId;
+		this.videoErrorOverlay.classList.add("hidden");
+		this.videoErrorOverlay.classList.remove("flex");
+
+		if (window.nexusPlayer && window.nexusPlayer.player) {
+			window.nexusPlayer.player.dispose();
+			window.nexusPlayer = null;
+		}
+
+		const existingPlayerEl = document.getElementById("video-player");
+		if (existingPlayerEl) {
+			existingPlayerEl.remove();
+		}
+
+		const videoEl = document.createElement("video");
+		videoEl.id = "video-player";
+		videoEl.className = "video-js vjs-midnight-skin vjs-big-play-centered";
+		videoEl.style.width = "100%";
+		videoEl.style.height = "100%";
+
+		this.videoPlayerContent.insertBefore(videoEl, this.videoErrorOverlay);
+		this.videoPlayerModal.classList.add("visible");
+
+		// Ensure close button is working by re-adding event listener
+		setTimeout(() => {
+			const closeBtn = document.getElementById("video-close-btn");
+			if (closeBtn) {
+				// Remove any existing listeners and add a new one
+				closeBtn.onclick = (e) => {
+					console.log("Close button clicked via onclick");
+					e.preventDefault();
+					e.stopPropagation();
+					this.hideVideoPlayer(this.currentlyPlayingMediaId);
+				};
+				console.log("Close button event listener re-added");
+			}
+		}, 100);
+
+		try {
+			console.log("filePath:", filePath);
+			window.nexusPlayer = new VideoPlayer("video-player", filePath, watchHistory);
+		} catch (error) {
+			console.error("Failed to initialize VideoPlayer:", error);
+			this.videoErrorOverlay.classList.remove("hidden");
+			this.videoErrorOverlay.classList.add("flex");
+			lucide.createIcons();
+		}
+	}
+
+	async hideVideoPlayer(mediaId) {
+		console.log('Hiding video player for', mediaId);
+		if (window.nexusPlayer && window.nexusPlayer.player) {
+			const watched_duration = window.nexusPlayer.player.currentTime();
+			const total_duration = window.nexusPlayer.player.duration();
+			const watchHistory = {
+				media_id: mediaId,
+				watched_duration,
+				total_duration,
+				last_watched_timestamp: Date.now(),
+			};
+			console.log('Updating watch history:', watchHistory);
+			await this.updateWatchHistory(watchHistory);
+			console.log('Watch history updated.');
+			window.nexusPlayer.player.dispose();
+			window.nexusPlayer = null;
+
+			document.dispatchEvent(new CustomEvent('watchHistoryUpdated', { detail: { mediaId, watchHistory } }));
+		}
+		this.videoPlayerModal.classList.remove("visible");
+	}
+
+	handleWatchHistoryUpdate(event) {
+		const { mediaId, watchHistory } = event.detail;
+		const progressBar = document.getElementById(`progress-${mediaId}`);
+		if (progressBar) {
+			const watchedPercentage = watchHistory.total_duration > 0 ? (watchHistory.watched_duration / watchHistory.total_duration) * 100 : 0;
+			progressBar.style.width = `${watchedPercentage}%`;
+		}
+
+		const parts = mediaId.split('-');
+		const itemType = parts[0];
+		const seriesId = parts[1];
+		const overallMediaId = `${itemType}-${seriesId}`;
+
+		const overallProgressBar = document.getElementById(`progress-${overallMediaId}`);
+		const watchStatusEl = document.getElementById(`watch-status-${overallMediaId}`);
+
+		if (overallProgressBar && watchStatusEl) {
+			this.findLastWatchedEpisode(seriesId).then(lastWatched => {
+				if (lastWatched) {
+					const watchedPercentage = lastWatched.total_duration > 0 ? (lastWatched.watched_duration / lastWatched.total_duration) * 100 : 0;
+					overallProgressBar.style.width = `${watchedPercentage}%`;
+
+					const formatTime = (seconds) => {
+						const h = Math.floor(seconds / 3600);
+						const m = Math.floor((seconds % 3600) / 60);
+						const s = Math.floor(seconds % 60);
+						return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+					};
+
+					const timeStatus = `at ${formatTime(lastWatched.watched_duration)} of ${formatTime(lastWatched.total_duration)}`;
+					const parts = lastWatched.media_id.split('-');
+					const season = parts[2];
+					const episode = parts[3];
+					watchStatusEl.textContent = `Season ${season} Episode ${episode} ${timeStatus}`;
+				}
+			});
+		}
+	}
+
+	async getWatchHistory(mediaId) {
+		try {
+			const response = await fetch('/api/get-watch-history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(mediaId)
+			});
+			if (response.ok) {
+				return await response.json();
+			}
+		} catch (error) {
+			console.error('Error fetching watch history:', error);
+		}
+		return null;
+	}
+
+	async getAllWatchHistory() {
+		try {
+			const response = await fetch('/api/get-all-watch-history');
+			if (response.ok) {
+				return await response.json();
+			}
+		} catch (error) {
+			console.error('Error fetching all watch history:', error);
+		}
+		return {};
+	}
+
+	async findLastWatchedEpisode(seriesId) {
+		const allWatchHistory = await this.getAllWatchHistory();
+		const seriesWatchHistory = Object.values(allWatchHistory).filter(h => h.media_id.startsWith(`tv-${seriesId}-`));
+		if (seriesWatchHistory.length === 0) {
+			return null;
+		}
+		return seriesWatchHistory.sort((a, b) => b.last_watched_timestamp - a.last_watched_timestamp)[0];
+	}
+
+	async updateWatchHistory(watchHistory) {
+		try {
+			await fetch('/api/update-watch-history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(watchHistory)
+			});
+		} catch (error) {
+			console.error('Error updating watch history:', error);
+		}
+	}
+
+	async getWatchHistory(mediaId) {
+		try {
+			const response = await fetch('/api/get-watch-history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(mediaId)
+			});
+			if (response.ok) {
+				return await response.json();
+			}
+		} catch (error) {
+			console.error('Error fetching watch history:', error);
+		}
+		return null;
+	}
+
+	async getAllWatchHistory() {
+		try {
+			const response = await fetch('/api/get-all-watch-history');
+			if (response.ok) {
+				return await response.json();
+			}
+		} catch (error) {
+			console.error('Error fetching all watch history:', error);
+		}
+		return {};
+	}
+
+	async findLastWatchedEpisode(seriesId) {
+		const allWatchHistory = await this.getAllWatchHistory();
+		const seriesWatchHistory = Object.values(allWatchHistory).filter(h => h.media_id.startsWith(`tv-${seriesId}-`));
+		if (seriesWatchHistory.length === 0) {
+			return null;
+		}
+		return seriesWatchHistory.sort((a, b) => b.last_watched_timestamp - a.last_watched_timestamp)[0];
+	}
+
+	async updateWatchHistory(watchHistory) {
+		try {
+			await fetch('/api/update-watch-history', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(watchHistory)
+			});
+		} catch (error) {
+			console.error('Error updating watch history:', error);
+		}
+	}
 }

@@ -6,6 +6,7 @@ export class EventHandler {
     this.modalManager = modalManager;
     this.localLibraryManager = localLibraryManager;
     this.tmdbApi = tmdbApi;
+    this.playRandom = false;
 
     this.setupGlobalEventListeners();
   }
@@ -102,7 +103,7 @@ export class EventHandler {
 
     // Resume series button
     const resumeSeriesBtn = e.target.closest(".resume-series-btn");
-    if (resumeSeriesBtn && resumeSeriesBtn.dataset.path) {
+    if (resumeSeriesBtn) {
         const mediaId = resumeSeriesBtn.dataset.mediaId;
         const watchHistory = await this.modalManager.getWatchHistory(mediaId);
         this.modalManager.showVideoPlayer(resumeSeriesBtn.dataset.path, mediaId, watchHistory);
@@ -120,19 +121,26 @@ export class EventHandler {
 
         if (seriesFiles) {
             let nextEpisodeKey;
-            if (document.getElementById('play-random-episode-toggle').checked) {
+            if (this.playRandom) {
                 const episodeKeys = Object.keys(seriesFiles);
                 nextEpisodeKey = episodeKeys[Math.floor(Math.random() * episodeKeys.length)];
             } else if (lastWatchedEpisode) {
                 const parts = lastWatchedEpisode.split('-');
                 let season = parseInt(parts[2]);
                 let episode = parseInt(parts[3]);
-                episode++;
-                nextEpisodeKey = `${season}-${episode}`;
-                if (!seriesFiles[nextEpisodeKey]) {
-                    season++;
-                    episode = 1;
-                    nextEpisodeKey = `${season}-${episode}`;
+
+                const allEpisodeKeys = Object.keys(seriesFiles).sort((a, b) => {
+                    const [sa, ea] = a.split('-').map(Number);
+                    const [sb, eb] = b.split('-').map(Number);
+                    if (sa !== sb) return sa - sb;
+                    return ea - eb;
+                });
+
+                const currentEpisodeIndex = allEpisodeKeys.indexOf(`${season}-${episode}`);
+                if (currentEpisodeIndex > -1 && currentEpisodeIndex < allEpisodeKeys.length - 1) {
+                    nextEpisodeKey = allEpisodeKeys[currentEpisodeIndex + 1];
+                } else {
+                    nextEpisodeKey = null; // Last episode, do nothing
                 }
             } else {
                 nextEpisodeKey = Object.keys(seriesFiles).find(key => key.startsWith('1-1'));
@@ -140,12 +148,18 @@ export class EventHandler {
 
             if (seriesFiles[nextEpisodeKey]) {
                 const filePath = seriesFiles[nextEpisodeKey];
-                const mediaId = `tv-${seriesId}-${nextEpisodeKey}`;
+                const mediaId = `tv-${seriesId}-${nextEpisodeKey.replace('-', '-')}`;
                 const watchHistory = await this.modalManager.getWatchHistory(mediaId);
                 this.modalManager.showVideoPlayer(filePath, mediaId, watchHistory);
             }
         }
         return;
+    }
+
+    // Play random episode toggle
+    const randomToggle = e.target.closest('#play-random-episode-toggle');
+    if (randomToggle) {
+        this.playRandom = randomToggle.checked;
     }
   }
 
