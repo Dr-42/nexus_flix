@@ -71,10 +71,13 @@ export class BackendTMDBApi {
 
 	// Image URL methods
 	getImageUrl(path, size = "w500") {
-		return this.fetchFromBackend(`image/${size}${path}`);
+		if (!path) {
+            return this.getPlaceholderImage();
+        }
+        return `/api/tmdb/image/${size}${path}`;
 	}
 
 	getPlaceholderImage(width = 400, height = 600, text = "No+Image") {
-		this.fetchFromBackend(`placeholder`, { width, height, text });
+		return `/api/placeholder?width=${width}&height=${height}&text=${text}`;
 	}
 }
