@@ -35,11 +35,11 @@ export class BackendTMDBApi {
 
 	// Search methods
 	async searchMovie(query) {
-		return this.fetchFromBackend("search", { query, type: "movie" });
+		return this.fetchFromBackend("search/movie", { query });
 	}
 
 	async searchTV(query) {
-		return this.fetchFromBackend("search", { query, type: "tv" });
+		return this.fetchFromBackend("search/tv", { query });
 	}
 
 	// Details methods
