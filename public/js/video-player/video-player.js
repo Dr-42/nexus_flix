@@ -3,12 +3,17 @@ import { VideoResponseParser } from './video-response-parser.js';
 import { WebVTTParser } from './webvtt-parser.js';
 import { SettingsModal } from '../ui/settings-modal.js';
 
+const BUFFER_CHUNK_TIME = 10; // seconds
+const CHUNK_FETCH_AHEAD = 30; // Number
+const CHUNK_FETCH_BEHIND = 5; // seconds
+
 /**
  * Custom Video Player with MediaSource API integration
  * Handles video streaming, audio/subtitle track switching, and controls
  */
 export class VideoPlayer {
 	constructor(videoElementId, videoPath, watchHistory) {
+
 		this.videoElementId = videoElementId;
 		this.videoElement = document.getElementById(videoElementId);
 		this.videoPath = encodeURIComponent(videoPath);
@@ -27,6 +32,8 @@ export class VideoPlayer {
 		this.seekDuration = 0;
 		this.seekDelay = 500; // in milliseconds
 		this.seekTimer = null;
+
+		this.timeUpdateChunkFetchEnd = -1;
 
 		if ("MediaSource" in window) {
 			this.initializeMediaSource();
@@ -284,10 +291,6 @@ export class VideoPlayer {
 		});
 	}
 
-	async switchSubtitleTrackByIndex(direction) {
-		// TODO: Implement subtitle track switching
-	}
-
 	async switchAudioTrackByIndex(direction) {
 		const audioTracks = this.videoMetadata.getAudioTracks();
 		const currentIndex = audioTracks.findIndex(
@@ -373,7 +376,16 @@ export class VideoPlayer {
 	}
 
 	addEventListeners() {
-		this.videoElement.addEventListener("seeking", async () => {
+		// Handle "waiting" event to detect buffering
+		// This should pretty much cover everything along with timeupdate
+		this.videoElement.addEventListener("waiting", () => {
+			if (
+				!this.videoSourceBuffer ||
+				this.videoSourceBuffer.updating ||
+				this.isFetching
+			) {
+				return;
+			}
 			let bufferedAreas = {
 				currentTime: this.videoElement.currentTime,
 				buffered: [],
@@ -383,20 +395,47 @@ export class VideoPlayer {
 				const start = videoBufferedRanges.start(i);
 				const end = videoBufferedRanges.end(i);
 				bufferedAreas.buffered.push({ start: start, end: end });
+				// NOTE: We are hoping that start and end are in the same format as currentTime
 			}
-			this.isSeeking = true;
-			if (
-				this.videoSourceBuffer &&
-				!this.videoSourceBuffer.updating &&
-				!this.isFetching
-			) {
-				const currentTime = this.videoElement.currentTime;
-				this.fetchVideoChunk(currentTime);
+			const currentTime = this.videoElement.currentTime;
+			// Check if currentTime is within any buffered range
+			let isBuffered = false;
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				if (currentTime >= start && currentTime <= end) {
+					isBuffered = true;
+					break;
+				}
 			}
-		});
+			// If not buffered, fetch the previous 5 seconds chunk and the next 40 seconds chunk
+			if (!isBuffered) {
+				let fetchTime = currentTime - CHUNK_FETCH_BEHIND;
+				if (fetchTime < 0) fetchTime = 0;
+				this.fetchVideoChunk(fetchTime, CHUNK_FETCH_BEHIND + CHUNK_FETCH_AHEAD);
+			}
 
-		this.videoElement.addEventListener("seeked", () => {
-			this.isSeeking = false;
+			// If in buffer, find out till how much is buffered, then fetch 40 seconds ahead of that
+			else {
+				if (videoBufferedRanges.length === 0) {
+					// No buffered ranges, fetch from current time
+					let fetchTime = currentTime - CHUNK_FETCH_BEHIND;
+					if (fetchTime < 0) fetchTime = 0;
+					this.fetchVideoChunk(fetchTime, CHUNK_FETCH_BEHIND + CHUNK_FETCH_AHEAD);
+					return;
+				}
+				for (let i = 0; i < videoBufferedRanges.length; i++) {
+					const start = videoBufferedRanges.start(i);
+					const end = i == 0 ? 0 : videoBufferedRanges.end(i - 1);
+					if (currentTime <= start && currentTime >= end) {
+						// Current time is between two buffered ranges, fetch from current time
+						let fetchTime = currentTime - 5;
+						if (fetchTime < 0) fetchTime = 0;
+						this.fetchVideoChunk(fetchTime, CHUNK_FETCH_BEHIND + CHUNK_FETCH_AHEAD);
+						break;
+					}
+				}
+			}
 		});
 
 		this.videoElement.addEventListener("timeupdate", async () => {
@@ -408,17 +447,101 @@ export class VideoPlayer {
 				return;
 			}
 
+			let bufferedAreas = {
+				currentTime: this.videoElement.currentTime,
+				buffered: [],
+			};
+			let videoBufferedRanges = this.videoSourceBuffer.buffered;
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				bufferedAreas.buffered.push({ start: start, end: end });
+				// NOTE: We are hoping that start and end are in the same format as currentTime
+			}
 			const currentTime = this.videoElement.currentTime;
-			const bufferEnd = this.getRelevantBufferEnd();
-
-			if (currentTime >= bufferEnd - 3 || this.isSeeking) {
-				const newTime = await this.bufferNextVideoChunk(currentTime);
-				if (this.isSeeking) {
-					this.isSeeking = false;
-					this.videoElement.currentTime = newTime + 0.3;
+			// Check if currentTime is within any buffered range
+			let isBuffered = false;
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				if (currentTime >= start && currentTime <= end) {
+					isBuffered = true;
+					break;
 				}
 			}
+			// If not buffered, return for now
+			if (!isBuffered) {
+				return;
+			}
+
+			// Find out till how much the current chunk is buffered and fetch enough so that we have 40 secs ahead of that
+			let bufferEnd = 0;
+			let bufferStart = 0;
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				if (start <= currentTime && end > bufferEnd) {
+					bufferEnd = end;
+				}
+			}
+
+			for (let i = 0; i < videoBufferedRanges.length; i++) {
+				const start = videoBufferedRanges.start(i);
+				const end = videoBufferedRanges.end(i);
+				if (start < currentTime && end >= currentTime) {
+					bufferStart = start;
+					break;
+				}
+			}
+			// If we have less than 30 seconds buffered ahead of current time, fetch more
+			if ((bufferEnd - currentTime) < (CHUNK_FETCH_AHEAD - BUFFER_CHUNK_TIME)) {
+				console.log("Buffering more ahead", { bufferEnd, currentTime, CHUNK_FETCH_AHEAD, BUFFER_CHUNK_TIME });
+				this.timeUpdateChunkFetchEnd = bufferEnd;
+				await this.fetchVideoChunk(bufferEnd, CHUNK_FETCH_AHEAD);
+				this.timeUpdateChunkFetchEnd = -1;
+			}
+
+			// If we have more than 10 seconds buffered behind current time, remove that
+			// if ((currentTime - bufferStart) > CHUNK_FETCH_BEHIND) {
+			// 	const removeEnd = bufferStart + (currentTime - bufferStart - CHUNK_FETCH_BEHIND);
+			// 	this.videoSourceBuffer.remove(bufferStart, removeEnd);
+			// 	this.audioSourceBuffer.remove(bufferStart, removeEnd);
+			// }
+
+			// If we were seeking, and have buffered the current time, reset isSeeking
+			if (this.isSeeking) {
+				this.isSeeking = false;
+			}
 		});
+
+
+
+		// this.videoElement.addEventListener("seeking", async () => {
+		// 	let bufferedAreas = {
+		// 		currentTime: this.videoElement.currentTime,
+		// 		buffered: [],
+		// 	};
+		// 	let videoBufferedRanges = this.videoSourceBuffer.buffered;
+		// 	for (let i = 0; i < videoBufferedRanges.length; i++) {
+		// 		const start = videoBufferedRanges.start(i);
+		// 		const end = videoBufferedRanges.end(i);
+		// 		bufferedAreas.buffered.push({ start: start, end: end });
+		// 	}
+		// 	this.isSeeking = true;
+		// 	if (
+		// 		this.videoSourceBuffer &&
+		// 		!this.videoSourceBuffer.updating &&
+		// 		!this.isFetching
+		// 	) {
+		// 		const currentTime = this.videoElement.currentTime;
+		// 		this.fetchVideoChunk(currentTime);
+		// 	}
+		// });
+		//
+		// this.videoElement.addEventListener("seeked", () => {
+		// 	this.isSeeking = false;
+		// });
+		//
 
 		this.videoElement.addEventListener("ended", () => {
 			// Autoplay logic here
@@ -474,7 +597,7 @@ export class VideoPlayer {
 		}
 	}
 
-	async fetchVideoChunk(startTime) {
+	async fetchVideoChunk(startTime, duration = 10) {
 		if (
 			this.isFetching ||
 			!this.videoSourceBuffer ||
@@ -497,7 +620,7 @@ export class VideoPlayer {
 			this.videoSourceBuffer.timestampOffset = startTime;
 			this.audioSourceBuffer.timestampOffset = startTime;
 			const response = await fetch(
-				`/video?path=${this.videoPath}&timestamp=${startTime}&duration=10`,
+				`/video?path=${this.videoPath}&timestamp=${startTime}&duration=${duration}`,
 			);
 			if (!response.ok) {
 				throw new Error("Failed to fetch video chunk");
