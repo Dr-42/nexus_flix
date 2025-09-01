@@ -223,7 +223,7 @@ pub async fn get_video_data(
 ) -> Result<VideoResponse, String> {
     let video_metadata = get_video_metadata(path).await?;
     let mut video_data = VideoResponse::default();
-    let duration = duration.unwrap_or(20.0);
+    let duration = duration.unwrap_or(10.0);
     println!("Duration: {duration}");
     for track in &video_metadata.tracks {
         match track.kind {
@@ -265,7 +265,7 @@ async fn get_video(path: &str, start_timestamp: f64, duration: f64) -> Vec<u8> {
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
-            .args(["-c:v", "h264_nvenc"])
+            .args(["-c:v", "hevc_nvenc"])
             .args(["-crf", "20"])
             .args(["-vf", "scale_cuda=1920:1080:format=yuv420p"])
             .args(["-force_key_frames", "expr:gte(t,n_forced*2)"])
@@ -317,7 +317,6 @@ async fn get_audio(path: &str, id: u64, start_timestamp: f64, duration: f64) -> 
             .args(["-ss", &start_timestamp.to_string()])
             .args(["-i", &path])
             .args(["-t", &duration.to_string()])
-            //.args(["-c:a", "libfdk_aac"])
             .args(["-c:a", "libopus"])
             .args(["-ac", "2"])
             .args(["-af", "loudnorm"])

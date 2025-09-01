@@ -13,7 +13,7 @@ export class VideoPlayer {
     this.videoElement = document.getElementById(videoElementId);
     this.videoPath = encodeURIComponent(videoPath);
     this.watchHistory = watchHistory;
-    this.videoMimeType = 'video/mp4 ; codecs="avc1.42E01E"';
+    this.videoMimeType = 'video/mp4 ; codecs="hvc1.1.6.L93.B0"';
     this.audioMimeType = 'audio/mp4 ; codecs="opus"';
     this.mediaSource = null;
     this.videoSourceBuffer = null;
@@ -410,7 +410,7 @@ export class VideoPlayer {
       const currentTime = this.videoElement.currentTime;
       const bufferEnd = this.getRelevantBufferEnd();
 
-      if (currentTime >= bufferEnd - 6 || this.isSeeking) {
+      if (currentTime >= bufferEnd - 3 || this.isSeeking) {
         const newTime = await this.bufferNextVideoChunk(currentTime);
         if (this.isSeeking) {
           this.isSeeking = false;
@@ -496,7 +496,7 @@ export class VideoPlayer {
       this.videoSourceBuffer.timestampOffset = startTime;
       this.audioSourceBuffer.timestampOffset = startTime;
       const response = await fetch(
-        `/video?path=${this.videoPath}&timestamp=${startTime}&duration=20`,
+        `/video?path=${this.videoPath}&timestamp=${startTime}&duration=10`,
       );
       if (!response.ok) {
         throw new Error("Failed to fetch video chunk");
