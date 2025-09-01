@@ -13,6 +13,15 @@ pub async fn serve_index() -> impl IntoResponse {
         .unwrap()
 }
 
+pub async fn serve_favicon() -> impl IntoResponse {
+    let favicon_bytes = include_bytes!("../public/images/favicon.png");
+    Response::builder()
+        .status(200)
+        .header(header::CONTENT_TYPE, "image/x-icon")
+        .body(Body::from(favicon_bytes.as_ref()))
+        .unwrap()
+}
+
 // JavaScript module serving functions
 pub async fn serve_webvtt_parser() -> impl IntoResponse {
     let js_text = include_str!("../public/js/video-player/webvtt-parser.js");

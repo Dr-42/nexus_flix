@@ -45,6 +45,7 @@ async fn main() {
     
     let app = Router::new();
     let app = add_route!(app, get, "/", web_servers::serve_index);
+    let app = add_route!(app, get, "/favicon.png", web_servers::serve_favicon);
     let app = add_route!(app, get, "/video", video_servers::serve_video);
     let app = add_route!(app, get, "/video-data", video_servers::serve_video_metadata);
     let app = add_route!(app, get, "/file_list", video_servers::serve_file_list);
