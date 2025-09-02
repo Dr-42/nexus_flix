@@ -55,6 +55,9 @@ async fn main() {
     let app = add_route!(app, post, "/api/get-watch-history", api_servers::get_watch_history);
     let app = add_route!(app, get, "/api/get-all-watch-history", api_servers::get_all_watch_history);
     let app = add_route!(app, get, "/api/keys", get_api_keys);
+    let app = add_route!(app, get, "/api/config", video_servers::get_config);
+    let app = add_route!(app, post, "/api/config", video_servers::update_config);
+    let app = add_route!(app, get, "/api/browse", video_servers::browse);
     // Placeholder image
     let app = add_route!(app, get, "/api/placeholder", tmdb_api::serve_placeholder_image);
     // TMDB API routes
